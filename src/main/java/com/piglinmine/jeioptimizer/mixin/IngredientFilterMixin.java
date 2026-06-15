@@ -17,87 +17,93 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Перенаправляет цикл из {@code IngredientFilter} конструктора
- * <pre>
- *   for (IListElementInfo&lt;?&gt; ingredient : ingredients) {
- *       addIngredient(ingredient);  // ← 50,000 итераций
- *   }
- * </pre>
- * на один batch-вызов {@link IElementSearch#addAll}, который уже
- * оптимизирован {@link ElementSearchMixin}.
+ * Batched init для {@link IngredientFilter}. Forge 1.20.1 Mixin 0.8.5.
  *
- * <h3>Почему ThreadLocal</h3>
- * Mixin запрещает non-static {@code @Inject} на {@code @At("HEAD")} конструктора —
- * там ещё не вызван {@code super()} и {@code this} невалиден. Поэтому HEAD-handler
- * мы делаем {@code static} + используем {@link ThreadLocal} для проброса
- * {@code ingredients} в TAIL-handler того же потока.
+ * <h3>Почему НЕТ {@code @At("HEAD")} на конструкторе</h3>
+ * Mixin 0.8.5 annotation processor категорически запрещает любые точки кроме
+ * {@code RETURN} на конструкторе ("Cannot inject into constructors at non-return
+ * instructions"). На NeoForge 1.21.1 (Mixin 0.15) это смягчили — там HEAD
+ * разрешён с static handler'ом. Тут — нет.
  *
- * <h3>Почему не сломаем рантайм</h3>
- * Глушим {@code addIngredient} только пока {@code jeiopt$initCaptured} держит
- * не-null значение в этом потоке. В TAIL мы её сбрасываем. Все последующие
- * {@code addIngredient} (из плагинов / визибилити-эвентов) работают как обычно.
+ * <h3>Как обойти</h3>
+ * Используем {@code @Unique}-поле {@code jeiopt$buffer} с инициализатором.
+ * Mixin вставляет инициализаторы {@code @Unique} полей в КОНСТРУКТОР целевого
+ * класса — то есть к моменту первого вызова {@code addIngredient(...)} буфер
+ * уже создан.
+ *
+ * <h3>Логика</h3>
+ * <ol>
+ *   <li>{@code addIngredient} в цикле конструктора видит непустой buffer
+ *       → добавляет {@code info} туда и cancel'ит оригинал. Цикл крутится
+ *       вхолостую (~50k пустых вызовов).</li>
+ *   <li>{@code <init>} {@code RETURN} сбрасывает {@code buffer = null} и
+ *       вызывает batch addAll (его параллелит {@link ElementSearchMixin}).</li>
+ *   <li>После {@code RETURN} buffer == null → последующие {@code addIngredient}
+ *       (из рантайма JEI / event listener'ов) работают нормально.</li>
+ * </ol>
  */
 @Mixin(value = IngredientFilter.class, remap = false)
 public abstract class IngredientFilterMixin {
 
-    // elementSearch без @Final — в JEI оно не final (rebuildItemFilter() пересоздаёт).
+    // elementSearch НЕ final в JEI — rebuildItemFilter() его пересоздаёт.
     @Shadow private IElementSearch elementSearch;
     @Shadow @Final private IIngredientManager ingredientManager;
     @Shadow @Final private IIngredientVisibility ingredientVisibility;
     @Shadow public abstract void invalidateCache();
     @Shadow private native void notifyListenersOfChange();
+    @Shadow public abstract <V> void addIngredient(IListElementInfo<V> info);
 
     /**
-     * Per-thread окно «мы внутри init-batch'а». Заполняется в HEAD,
-     * читается в addIngredient (cancellable), очищается в TAIL.
+     * Сигнал "конструктор отработал" — выставляется в TAIL.
+     * Defaults to false (boolean default) → во время init он гарантированно false,
+     * даже если Mixin не смержил field initializer.
      */
     @Unique
-    private static final ThreadLocal<List<IListElementInfo<?>>> jeiopt$initCaptured = new ThreadLocal<>();
+    private boolean jeiopt$initDone = false;
 
     /**
-     * HEAD конструктора. ОБЯЗАН быть static — это до super().
+     * Init-batch буфер. Lazy-init на первое использование — на случай если
+     * Mixin не смержил initializer корректно (защита от версионных багов 0.8.5).
      */
-    @Inject(
-            method = "<init>",
-            at = @At("HEAD")
-    )
-    private static void jeiopt$captureForBatch(
-            mezz.jei.gui.filter.IFilterTextSource filterTextSource,
-            mezz.jei.common.config.IClientConfig clientConfig,
-            mezz.jei.common.config.IIngredientFilterConfig config,
-            IIngredientManager ingredientManager,
-            java.util.Comparator<IListElement<?>> ingredientComparator,
-            List<IListElementInfo<?>> ingredients,
-            mezz.jei.api.helpers.IModIdHelper modIdHelper,
-            IIngredientVisibility ingredientVisibility,
-            mezz.jei.api.helpers.IColorHelper colorHelper,
-            mezz.jei.common.config.IClientToggleState clientToggleState,
-            CallbackInfo ci) {
-        if (Config.enabled()) {
-            jeiopt$initCaptured.set(ingredients);
-        }
-    }
+    @Unique
+    private List<IListElementInfo<?>> jeiopt$buffer;
 
+    /**
+     * Перехватываем КАЖДЫЙ {@code addIngredient}. Пока {@code jeiopt$initDone == false}
+     * (мы в init-фазе) — сохраняем info в buffer и отменяем оригинал.
+     * После TAIL флаг становится true → последующие addIngredient проходят нормально.
+     */
     @Inject(
             method = "addIngredient",
             at = @At("HEAD"),
             cancellable = true
     )
-    private void jeiopt$skipDuringBatchInit(IListElementInfo<?> info, CallbackInfo ci) {
-        // Глушим ТОЛЬКО когда мы внутри нашего init-batch'а на этом треде.
-        if (jeiopt$initCaptured.get() != null) {
-            ci.cancel();
+    private void jeiopt$bufferDuringInit(IListElementInfo<?> info, CallbackInfo ci) {
+        if (this.jeiopt$initDone) return;
+        if (!Config.enabled()) return;
+        if (this.jeiopt$buffer == null) {
+            this.jeiopt$buffer = new ArrayList<>();
         }
+        this.jeiopt$buffer.add(info);
+        ci.cancel();
     }
 
+    /**
+     * Конец конструктора — flush буфера через batch path.
+     * <p>
+     * Сначала {@code jeiopt$buffer = null}, потом работаем — чтобы любой
+     * случайный {@code addIngredient} в нашей TAIL-логике (его там нет, но
+     * для безопасности) шёл нормальным путём, а не зацикливался.
+     */
     @Inject(
             method = "<init>",
-            at = @At("TAIL")
+            at = @At("RETURN")
     )
-    private void jeiopt$flushBatch(
+    private void jeiopt$flush(
             mezz.jei.gui.filter.IFilterTextSource filterTextSource,
             mezz.jei.common.config.IClientConfig clientConfig,
             mezz.jei.common.config.IIngredientFilterConfig config,
@@ -110,34 +116,35 @@ public abstract class IngredientFilterMixin {
             mezz.jei.common.config.IClientToggleState clientToggleState,
             CallbackInfo ci) {
 
-        List<IListElementInfo<?>> batch = jeiopt$initCaptured.get();
-        if (batch == null) return;
-        jeiopt$initCaptured.remove();
+        this.jeiopt$initDone = true; // ← с этого момента addIngredient идёт мимо буфера
+        List<IListElementInfo<?>> batch = this.jeiopt$buffer;
+        this.jeiopt$buffer = null;
 
-        // Tier C: async build. Игрок попадает в мир сразу, JEI поиск становится
-        // доступен через 1-2 секунды. На время сборки getElements() вернёт пусто.
+        if (batch == null || batch.isEmpty()) return;
+
+        // Config мог измениться пока цикл крутился — fail-safe: переиграть руками
+        if (!Config.enabled()) {
+            for (IListElementInfo<?> info : batch) {
+                this.addIngredient(info); // теперь buffer == null → реальное добавление
+            }
+            return;
+        }
+
         if (Config.ASYNC_BUILD) {
             jeiopt$kickAsyncBuild(batch);
             return;
         }
-
         jeiopt$buildSync(batch);
     }
 
     @Unique
     private void jeiopt$buildSync(List<IListElementInfo<?>> batch) {
         long t0 = System.nanoTime();
-
-        // 1) updateHiddenState — sequential, дёшево.
         for (IListElementInfo<?> info : batch) {
             jeiopt$updateHidden(info);
         }
         long tAfterHidden = System.nanoTime();
-
-        // 2) Batch add — здесь стреляет ElementSearchMixin#parallelAddAll.
         this.elementSearch.addAll(batch, this.ingredientManager);
-
-        // 3) Один инвалидейт вместо 50k.
         this.invalidateCache();
 
         long now = System.nanoTime();
@@ -167,8 +174,6 @@ public abstract class IngredientFilterMixin {
                 }
                 this.elementSearch.addAll(batch, this.ingredientManager);
                 this.invalidateCache();
-                // Дёргаем listeners на main thread — UI overlay должен пере-отрендерить
-                // ingredient grid когда оно станет доступным.
                 net.minecraft.client.Minecraft.getInstance().execute(this::notifyListenersOfChange);
 
                 long ms = (System.nanoTime() - t0) / 1_000_000;

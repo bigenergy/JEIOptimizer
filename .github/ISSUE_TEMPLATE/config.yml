@@ -1,8 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: PiglinMine Discord
-    url: https://piglinmine.com/discord
-    about: For general questions, support, or chat — use Discord. GitHub issues are for actionable bug reports and feature requests only.
-  - name: Buy Ultra+ on PiglinMine
-    url: https://piglinmine.com/donate
-    about: Support the development of this mod by buying a server tier at PiglinMine.

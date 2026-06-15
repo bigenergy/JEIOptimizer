@@ -163,7 +163,8 @@ public abstract class ElementSearchMixin {
     @Unique
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object jeiopt$uid(ITypedIngredient<?> typed, IIngredientManager mgr) {
+        // JEI 15.x: getUniqueId(V, UidContext) → String (на 19.x был Object getUid)
         IIngredientHelper helper = mgr.getIngredientHelper(typed.getType());
-        return helper.getUid(typed.getIngredient(), UidContext.Ingredient);
+        return helper.getUniqueId(typed.getIngredient(), UidContext.Ingredient);
     }
 }

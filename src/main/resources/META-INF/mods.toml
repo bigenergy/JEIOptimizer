@@ -16,24 +16,24 @@ config = "${mod_id}.mixins.json"
 # -------- Dependencies --------
 
 [[dependencies."${mod_id}"]]
-modId = "neoforge"
-type = "required"
-versionRange = "${neo_version_range}"
+modId = "forge"
+mandatory = true
+versionRange = "${forge_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies."${mod_id}"]]
 modId = "minecraft"
-type = "required"
+mandatory = true
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
-# JEI is required client-side — all our mixins target JEI classes.
-# Server-side this mod is no-op (mixins are client-only).
+# JEI required client-side — all our mixins target JEI internal classes.
+# Server-side this mod is a no-op.
 [[dependencies."${mod_id}"]]
 modId = "jei"
-type = "required"
-versionRange = "[19.0.0,)"
+mandatory = true
+versionRange = "[15.0.0,)"
 ordering = "AFTER"
 side = "CLIENT"

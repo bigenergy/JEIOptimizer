@@ -1,31 +1,29 @@
 package com.piglinmine.jeioptimizer;
 
 import com.mojang.logging.LogUtils;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.loading.FMLEnvironment;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 /**
  * JEIOptimizer — клиентский мод-ускоритель сборки ingredient filter'а JEI.
  * <p>
- * Главный пейн: при коннекте на сервер JEI пересобирает весь свой индекс
- * (рецепты + ingredients + filter). На паках с 250+ модов это даёт ~12-15 сек
- * блокировки главного потока на одной только сборке filter'а.
- * <p>
- * Мы это лечим миксином в {@code ElementSearch.addAll}, где параллелим
- * заполнение per-prefix хранилищ. См. {@link Config.Mode} для опций.
+ * Forge 1.20.1 backport. Подробности — см. NeoForge 1.21.1 ветку.
  */
 @Mod(Jeioptimizer.MODID)
 public class Jeioptimizer {
     public static final String MODID = "jeioptimizer";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public Jeioptimizer(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
+    public Jeioptimizer() {
+        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
+        modBus.addListener(Config::onLoad);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             LOGGER.info("[JEIOptimizer] Loaded on CLIENT — mixins will be applied to JEI.");

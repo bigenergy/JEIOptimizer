@@ -9,7 +9,6 @@ import mezz.jei.common.Internal;
 import mezz.jei.common.config.IClientConfig;
 import mezz.jei.common.config.IJeiClientConfigs;
 import mezz.jei.common.util.StackHelper;
-import mezz.jei.library.plugins.vanilla.ingredients.ItemStackHelper;
 import mezz.jei.library.plugins.vanilla.ingredients.ItemStackListFactory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -33,23 +32,12 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * <b>Tier B</b> — параллельное построение CreativeModeTab контента внутри
+ * Tier B (1.20.1 backport): параллельное построение CreativeModeTab контента внутри
  * {@link ItemStackListFactory#create}.
  * <p>
- * В оригинале (см. JEI 1.21.1 sources): главный поток обходит ~50 креативных табов,
- * каждому вызывает {@code tab.buildContents(displayParameters)} (мод-код!) и собирает
- * displayItems + searchTabDisplayItems в общий List + Set для уникальности.
- * <p>
- * Сложности параллели:
- * <ul>
- *     <li>{@code tab.buildContents()} — 99% табов чисто-вычислительные, но один-два
- *     могут трогать main-thread-only state. Try/catch вокруг каждого таба, fall-back
- *     на sequential для всего метода если что-то падает.</li>
- *     <li>Уникальность по UID — каждый таб собирает свой локальный набор, финальный
- *     merge sequential.</li>
- * </ul>
- * <p>
- * При parallel ошибке — возвращаемся (return) и даём JEI пройти оригинальным путём.
+ * JEI 15.x отличия от 19.x: {@code create} принимает только {@code StackHelper}
+ * (без {@code ItemStackHelper}); {@code clientConfig.isShowHiddenItemsEnabled()}
+ * вместо {@code getShowHiddenIngredients()}.
  */
 @Mixin(value = ItemStackListFactory.class, remap = false)
 public abstract class ItemStackListFactoryMixin {
@@ -57,7 +45,6 @@ public abstract class ItemStackListFactoryMixin {
     @Inject(method = "create", at = @At("HEAD"), cancellable = true)
     private static void jeiopt$parallelCreate(
             StackHelper stackHelper,
-            ItemStackHelper itemStackHelper,
             CallbackInfoReturnable<List<ItemStack>> cir) {
 
         if (!Config.PARALLEL_TABS) return;
@@ -65,7 +52,7 @@ public abstract class ItemStackListFactoryMixin {
         long t0 = System.nanoTime();
 
         try {
-            List<ItemStack> result = jeiopt$buildInParallel(stackHelper, itemStackHelper);
+            List<ItemStack> result = jeiopt$buildInParallel(stackHelper);
             cir.setReturnValue(result);
 
             long ms = (System.nanoTime() - t0) / 1_000_000;
@@ -73,8 +60,6 @@ public abstract class ItemStackListFactoryMixin {
                     "[JEIOptimizer] ItemStackListFactory.create (parallel) — {} items in {} ms",
                     result.size(), ms);
         } catch (Throwable t) {
-            // Любая ошибка → fallback на оригинал.
-            // НЕ cancel'им CallbackInfo → JEI выполнит свой код.
             Jeioptimizer.LOGGER.warn(
                     "[JEIOptimizer] Parallel ItemStackListFactory failed — falling back to sequential vanilla path",
                     t);
@@ -82,13 +67,10 @@ public abstract class ItemStackListFactoryMixin {
     }
 
     @Unique
-    private static List<ItemStack> jeiopt$buildInParallel(
-            StackHelper stackHelper,
-            ItemStackHelper itemStackHelper) throws Exception {
-
+    private static List<ItemStack> jeiopt$buildInParallel(StackHelper stackHelper) throws Exception {
         IJeiClientConfigs configs = Internal.getJeiClientConfigs();
         IClientConfig clientConfig = configs.getClientConfig();
-        boolean showHidden = clientConfig.getShowHiddenIngredients();
+        boolean showHidden = clientConfig.isShowHiddenItemsEnabled();
 
         Minecraft minecraft = Minecraft.getInstance();
         FeatureFlagSet features = Optional.ofNullable(minecraft.player)
@@ -109,18 +91,15 @@ public abstract class ItemStackListFactoryMixin {
         CreativeModeTab.ItemDisplayParameters displayParameters =
                 new CreativeModeTab.ItemDisplayParameters(features, hasOperatorPerms, level.registryAccess());
 
-        // Каждый таб собирает свои items в локальный TabBatch — никаких общих коллекций.
-        // Параллелим через наш пул чтобы не мешать MC ForkJoinPool.commonPool().
         List<CreativeModeTab> tabs = new ArrayList<>(CreativeModeTabs.allTabs());
 
         List<TabBatch> batches = WorkerPool.get().submit(() ->
                 tabs.parallelStream()
-                        .map(tab -> jeiopt$processTab(tab, displayParameters, stackHelper, itemStackHelper))
+                        .map(tab -> jeiopt$processTab(tab, displayParameters, stackHelper))
                         .filter(b -> b != null)
                         .toList()
         ).get();
 
-        // Sequential merge — глобальная уникальность по UID.
         Set<Object> globalUidSet = new HashSet<>();
         List<ItemStack> itemList = new ArrayList<>();
         for (TabBatch b : batches) {
@@ -134,14 +113,11 @@ public abstract class ItemStackListFactoryMixin {
     }
 
     @Unique
-    @SuppressWarnings("CallToPrintStackTrace")
     private static TabBatch jeiopt$processTab(
             CreativeModeTab tab,
             CreativeModeTab.ItemDisplayParameters displayParameters,
-            StackHelper stackHelper,
-            ItemStackHelper itemStackHelper) {
+            StackHelper stackHelper) {
 
-        // Пропускаем не-категории (поисковый таб и т.д.) — как в оригинале
         if (tab.getType() != CreativeModeTab.Type.CATEGORY) return null;
 
         try {
@@ -170,9 +146,9 @@ public abstract class ItemStackListFactoryMixin {
         }
 
         TabBatch batch = new TabBatch();
-        jeiopt$addItems(batch, displayItems, stackHelper, itemStackHelper);
+        jeiopt$addItems(batch, displayItems, stackHelper);
         if (!displayItems.equals(searchTabDisplayItems)) {
-            jeiopt$addItems(batch, searchTabDisplayItems, stackHelper, itemStackHelper);
+            jeiopt$addItems(batch, searchTabDisplayItems, stackHelper);
         }
         return batch;
     }
@@ -181,24 +157,21 @@ public abstract class ItemStackListFactoryMixin {
     private static void jeiopt$addItems(
             TabBatch batch,
             Collection<ItemStack> items,
-            StackHelper stackHelper,
-            ItemStackHelper itemStackHelper) {
+            StackHelper stackHelper) {
 
         Set<Object> tabUidSet = new HashSet<>();
         for (ItemStack stack : items) {
             if (stack.isEmpty()) continue;
-            if (!itemStackHelper.isValidIngredient(stack)) continue;
-            if (!itemStackHelper.isIngredientOnServer(stack)) continue;
 
             Object uid;
             try {
-                uid = stackHelper.getUidForStack(stack, UidContext.Ingredient);
+                // JEI 15.x: getUniqueIdentifierForStack (на 19.x: getUidForStack)
+                uid = stackHelper.getUniqueIdentifierForStack(stack, UidContext.Ingredient);
             } catch (RuntimeException | LinkageError e) {
                 continue;
             }
             if (uid == null) continue;
 
-            // tab-local uniqueness — но global уникальность обеспечивается merge'м
             if (tabUidSet.add(uid)) {
                 batch.uids.add(uid);
                 batch.items.add(stack);
@@ -214,5 +187,4 @@ public abstract class ItemStackListFactoryMixin {
             return tab.toString();
         }
     }
-
 }

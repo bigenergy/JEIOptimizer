@@ -1,0 +1,51 @@
+name: Feature Request
+description: Suggest a new optimization or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Feature Request
+
+        Got an idea for an optimization or a new feature? Tell us about it.
+
+        Note: this mod's scope is **JEI startup performance only**. Requests for unrelated JEI features will be closed.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the pain point. What's slow / annoying / missing?
+      placeholder: |
+        After connecting to my server, JEI plugin "Registering recipes" phase takes 5 seconds.
+        It's sequential per plugin. Could we parallelize it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How do you imagine it working? Be as specific as you can.
+      placeholder: |
+        Mixin into PluginCaller.callOnPlugins, run plugins.parallelStream() through a dedicated pool.
+        Synchronize RecipeManagerInternal.addRecipes to avoid races.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Did you try anything else first? Are there other approaches?
+      placeholder: |
+        Tried disabling broken JEI plugins individually — slow and brittle.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Estimated impact
+      description: |
+        How much do you think this will save? On what scale of modpack?
+      placeholder: |
+        On a 250+ mod pack: ~3 sec saved on connect time, based on log timings.

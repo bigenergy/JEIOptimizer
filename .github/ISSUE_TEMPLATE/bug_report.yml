@@ -1,0 +1,157 @@
+name: Bug Report
+description: Report a bug or crash in JEIOptimizer
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # JEIOptimizer Bug Report
+
+        Before opening an issue, please:
+
+        1. **Make sure the bug is caused by JEIOptimizer** — temporarily remove the jar from `mods/` and check if the problem persists. If it still happens without JEIOptimizer → it's not us.
+        2. **Set `filter.mode = "OFF"`** in `config/jeioptimizer-client.toml`, restart, retry. If the bug is gone in OFF mode but happens in `PARALLEL_FULL` → we can fix it. If it happens in OFF too → it's likely another mod's issue surfaced by our mod load order.
+        3. **Search existing issues** — your problem may already be reported.
+
+        Reports without the required info below will be closed without comment.
+
+  - type: input
+    id: jeioptimizer-version
+    attributes:
+      label: JEIOptimizer version
+      description: Exact jar filename (e.g. `jeioptimizer-1.21.1-1.0.0.jar`)
+      placeholder: jeioptimizer-1.21.1-1.0.0.jar
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mc-loader
+    attributes:
+      label: Minecraft + loader
+      options:
+        - "1.21.1 NeoForge"
+        - "1.20.1 Forge"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: jei-version
+    attributes:
+      label: JEI version
+      description: Exact JEI version (see in `mods/jei-*.jar` filename or in-game mod list)
+      placeholder: 19.21.2.313
+    validations:
+      required: true
+
+  - type: input
+    id: modpack
+    attributes:
+      label: Modpack
+      description: Name + version of the modpack (or "custom" + approximate mod count)
+      placeholder: ATM10 v2.40 — 350 mods
+    validations:
+      required: true
+
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      description: Your CPU model and core count
+      placeholder: Ryzen 5600X (6c/12t)
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: jeioptimizer-client.toml content
+      description: |
+        Paste the full content of `config/jeioptimizer-client.toml`.
+        We need this to know which mode/experimental flags you have on.
+      render: toml
+      placeholder: |
+        [filter]
+            mode = "PARALLEL_FULL"
+            async = false
+            log_timing = true
+        worker_count = 0
+        [plugins]
+            parallel_phases = []
+            parallel_creative_tabs = false
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this bug? Be specific.
+      placeholder: |
+        1. Launch with modpack X
+        2. Connect to a server (or open singleplayer world)
+        3. Wait for JEI to finish loading
+        4. Open inventory — JEI grid is empty
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vanilla-jei-check
+    attributes:
+      label: Does the bug happen without JEIOptimizer?
+      description: Remove `jeioptimizer-*.jar` from mods folder. Re-test. Does the problem still happen?
+      options:
+        - "I tested — it's gone without JEIOptimizer (this mod is the cause)"
+        - "I tested — it still happens without JEIOptimizer (not our bug, but reporting anyway)"
+        - "I did not test this"
+    validations:
+      required: true
+
+  - type: textarea
+    id: log-file
+    attributes:
+      label: latest.log (REQUIRED — attach as file or paste URL)
+      description: |
+        **Required.** Upload `logs/latest.log` (or `logs/debug.log`) by drag-and-dropping the file into this textbox.
+        DO NOT paste log content directly — it's too long. Use gist.github.com or mclo.gs if you can't attach.
+        Issues without logs WILL BE CLOSED.
+      placeholder: |
+        https://mclo.gs/...
+        or attach latest.log file by dragging it here
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash-report
+    attributes:
+      label: Crash report (if crash)
+      description: |
+        If the game crashed, upload `crash-reports/crash-*.txt` (drag the file).
+        Skip if the bug is not a crash.
+      placeholder: drag crash-report file here
+
+  - type: textarea
+    id: jei-timing
+    attributes:
+      label: JEIOptimizer timing lines from log
+      description: |
+        Search latest.log for `[JEIOptimizer]` and paste those lines. Helps us see what the optimization actually did.
+      render: text
+      placeholder: |
+        [JEIOptimizer] Started ForkJoinPool with 10 workers
+        [JEIOptimizer] addAll done — 58746 infos × 7 prefixes in 569 ms ...
+        [JEIOptimizer] IngredientFilter init done — 58746 ingredients in 672 ms total ...
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else? Screenshots, related issues, etc.

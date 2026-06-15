@@ -1,0 +1,124 @@
+name: Performance Regression
+description: Report that JEIOptimizer didn't help, made things slower, or behaved unexpectedly performance-wise
+labels: ["performance", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Performance Regression
+
+        Use this template if JEIOptimizer is **installed and not crashing**, but the connect/JEI-build time is **worse than expected** or **not improved**.
+
+        For crashes or broken JEI search → use the Bug Report template instead.
+
+  - type: input
+    id: jeioptimizer-version
+    attributes:
+      label: JEIOptimizer version
+      placeholder: jeioptimizer-1.21.1-1.0.0.jar
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mc-loader
+    attributes:
+      label: Minecraft + loader
+      options:
+        - "1.21.1 NeoForge"
+        - "1.20.1 Forge"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: jei-version
+    attributes:
+      label: JEI version
+      placeholder: 19.21.2.313
+    validations:
+      required: true
+
+  - type: input
+    id: modcount
+    attributes:
+      label: Mod count
+      description: How many mods does your pack have?
+      placeholder: "350"
+    validations:
+      required: true
+
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      placeholder: Ryzen 5600X (6c/12t)
+    validations:
+      required: true
+
+  - type: input
+    id: time-before
+    attributes:
+      label: "JEI build time WITHOUT JEIOptimizer (vanilla)"
+      description: |
+        Remove jeioptimizer-*.jar, connect to your server, find this line in `latest.log`:
+        `Building ingredient filter took X.XX seconds`
+      placeholder: "12.00 seconds"
+    validations:
+      required: true
+
+  - type: input
+    id: time-after
+    attributes:
+      label: "JEI build time WITH JEIOptimizer (PARALLEL_FULL mode)"
+      description: |
+        Put the jar back. Connect. Find the same line.
+      placeholder: "0.79 seconds"
+    validations:
+      required: true
+
+  - type: textarea
+    id: jeioptimizer-log
+    attributes:
+      label: "[JEIOptimizer] log lines"
+      description: |
+        Grep `[JEIOptimizer]` in latest.log and paste all matching lines.
+      render: text
+      placeholder: |
+        [JEIOptimizer] Started ForkJoinPool with 10 workers
+        [JEIOptimizer] addAll done — 58746 infos × 7 prefixes in 569 ms ...
+        [JEIOptimizer] IngredientFilter init done — 58746 ingredients in 672 ms total ...
+    validations:
+      required: true
+
+  - type: input
+    id: tooltip-mode
+    attributes:
+      label: tooltipSearchMode in jei-client.ini
+      description: Check `config/jei/jei-client.ini` — what is `tooltipSearchMode` set to?
+      placeholder: ENABLED / DISABLED / REQUIRE_PREFIX
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: jeioptimizer-client.toml content
+      render: toml
+    validations:
+      required: true
+
+  - type: textarea
+    id: latest-log
+    attributes:
+      label: latest.log (attach file)
+      description: |
+        Drag-and-drop `logs/latest.log` here. Required.
+      placeholder: drag latest.log here
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything else relevant

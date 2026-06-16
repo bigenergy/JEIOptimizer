@@ -29,25 +29,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
-/**
- * Сердце оптимизации: параллельный {@link ElementSearch#addAll}.
- * <p>
- * Vanilla JEI делает это так: один поток в цикле проходит по 50k айтемов
- * × 10 префиксов = 500k операций {@code storage.put}. Это и даёт 12 секунд.
- * <p>
- * Ключевой инсайт: каждый префикс ({@code name}, {@code modId}, {@code tag},
- * {@code tooltip}, ...) имеет СВОЁ ОТДЕЛЬНОЕ хранилище ({@code GeneralizedSuffixTree}).
- * Между префиксами нет общего состояния → можно строить их параллельно
- * без синхронизации.
- * <p>
- * Что мы делаем:
- * <ul>
- *   <li>{@code allElements} (общий) — заполняем sequential, дёшево</li>
- *   <li>Per-prefix storages — {@code parallelStream} по префиксам, каждый
- *   поток наполняет своё хранилище полностью изолированно</li>
- * </ul>
- * При 6 рабочих потоках профит ≈ {@code min(workers, prefixCount)}.
- */
+/** Parallel {@link ElementSearch#addAll}: each prefix owns its own storage, so we fan out across them. */
 @Mixin(value = ElementSearch.class, remap = false)
 public abstract class ElementSearchMixin {
 
@@ -58,7 +40,7 @@ public abstract class ElementSearchMixin {
     @Shadow @Final
     private Map<Object, IListElement<?>> allElements;
 
-    // Пул вынесен в общий WorkerPool — переиспользуется всеми Tier'ами.
+    // Pool lives in a shared WorkerPool — reused by all tiers.
 
     @Inject(method = "addAll", at = @At("HEAD"), cancellable = true)
     private void jeiopt$parallelAddAll(
@@ -68,14 +50,14 @@ public abstract class ElementSearchMixin {
 
         Config.Mode mode = Config.MODE;
         if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            // BATCH сам по себе уже выгоден vs per-item — отдаём оригиналу
+            // BATCH alone is already a win over per-item — hand off to the original
             return;
         }
         ci.cancel();
 
         long t0 = System.nanoTime();
 
-        // 1. allElements — sequential, дёшево (HashMap.put × N).
+        // 1. allElements — sequential, cheap (HashMap.put × N).
         for (IListElementInfo<?> info : infos) {
             Object uid = jeiopt$uid(info.getTypedIngredient(), ingredientManager);
             this.allElements.put(uid, info.getElement());
@@ -83,7 +65,7 @@ public abstract class ElementSearchMixin {
 
         long tAfterAll = System.nanoTime();
 
-        // 2. Per-prefix параллельно. Каждый префикс пишет в СВОЙ storage.
+        // 2. Per-prefix in parallel. Each prefix writes to its OWN storage.
         Collection<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixes =
                 this.prefixedSearchables.values();
 
@@ -123,12 +105,15 @@ public abstract class ElementSearchMixin {
 
         ISearchStorage<IListElement<?>> storage = prefix.getSearchStorage();
 
-        if (mode == Config.Mode.PARALLEL_FULL) {
-            // Внутри одного префикса: tokenize в параллель, но storage.put серийно
-            // (suffix tree не thread-safe).
+        // Tooltip prefix fires ItemTooltipEvent → arbitrary mod code that may need the main thread. Keep sequential.
+        final boolean isTooltipPrefix = jeiopt$isTooltipPrefix(prefix);
+        final Config.Mode effective = isTooltipPrefix ? Config.Mode.PARALLEL_PREFIX : mode;
+
+        if (effective == Config.Mode.PARALLEL_FULL) {
+            // Tokenize in parallel; storage.put stays sequential (suffix tree is not thread-safe).
             List<Map.Entry<IListElement<?>, Collection<String>>> tokens = infos.parallelStream()
                     .map(info -> new AbstractMap.SimpleEntry<IListElement<?>, Collection<String>>(
-                            info.getElement(), prefix.getStrings(info)))
+                            info.getElement(), jeiopt$safeGetStrings(prefix, info)))
                     .collect(Collectors.toList());
             for (Map.Entry<IListElement<?>, Collection<String>> e : tokens) {
                 IListElement<?> el = e.getKey();
@@ -137,11 +122,39 @@ public abstract class ElementSearchMixin {
             return;
         }
 
-        // PARALLEL_PREFIX: tokenize + put — оба в этом потоке. Гонок нет (storage уникален).
+        // PARALLEL_PREFIX (or tooltip downgrade): tokenize + put in this thread.
         for (IListElementInfo<?> info : infos) {
-            Collection<String> strings = prefix.getStrings(info);
+            Collection<String> strings = jeiopt$safeGetStrings(prefix, info);
             IListElement<?> el = info.getElement();
             for (String s : strings) storage.put(s, el);
+        }
+    }
+
+    @Unique
+    private static Collection<String> jeiopt$safeGetStrings(
+            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> prefix,
+            IListElementInfo<?> info) {
+        try {
+            return prefix.getStrings(info);
+        } catch (Throwable t) {
+            if (Config.LOG_TIMING_ENABLED) {
+                Jeioptimizer.LOGGER.debug(
+                        "[JEIOptimizer] prefix.getStrings threw — skipping ingredient. prefix={}, error={}",
+                        prefix.getMode(), t.toString());
+            }
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    @Unique
+    private static boolean jeiopt$isTooltipPrefix(PrefixedSearchable<?, ?> prefix) {
+        try {
+            String cls = prefix.getClass().getName();
+            if (cls.toLowerCase(java.util.Locale.ROOT).contains("tooltip")) return true;
+            String modeStr = String.valueOf(prefix.getMode());
+            return modeStr.toLowerCase(java.util.Locale.ROOT).contains("tooltip");
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -153,7 +166,7 @@ public abstract class ElementSearchMixin {
             if (p.getMode() == SearchMode.DISABLED) continue;
             ISearchStorage<IListElement<?>> storage = p.getSearchStorage();
             for (IListElementInfo<?> info : infos) {
-                Collection<String> strings = p.getStrings(info);
+                Collection<String> strings = jeiopt$safeGetStrings(p, info);
                 IListElement<?> el = info.getElement();
                 for (String s : strings) storage.put(s, el);
             }
@@ -163,7 +176,6 @@ public abstract class ElementSearchMixin {
     @Unique
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object jeiopt$uid(ITypedIngredient<?> typed, IIngredientManager mgr) {
-        // JEI 15.x: getUniqueId(V, UidContext) → String (на 19.x был Object getUid)
         IIngredientHelper helper = mgr.getIngredientHelper(typed.getType());
         return helper.getUniqueId(typed.getIngredient(), UidContext.Ingredient);
     }

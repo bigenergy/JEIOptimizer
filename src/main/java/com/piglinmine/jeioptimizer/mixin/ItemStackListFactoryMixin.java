@@ -32,12 +32,12 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Tier B (1.20.1 backport): параллельное построение CreativeModeTab контента внутри
+ * Tier B (1.20.1 backport): parallel build of CreativeModeTab contents inside
  * {@link ItemStackListFactory#create}.
  * <p>
- * JEI 15.x отличия от 19.x: {@code create} принимает только {@code StackHelper}
- * (без {@code ItemStackHelper}); {@code clientConfig.isShowHiddenItemsEnabled()}
- * вместо {@code getShowHiddenIngredients()}.
+ * JEI 15.x differences vs 19.x: {@code create} takes only {@code StackHelper}
+ * (no {@code ItemStackHelper}); {@code clientConfig.isShowHiddenItemsEnabled()}
+ * instead of {@code getShowHiddenIngredients()}.
  */
 @Mixin(value = ItemStackListFactory.class, remap = false)
 public abstract class ItemStackListFactoryMixin {
@@ -165,7 +165,7 @@ public abstract class ItemStackListFactoryMixin {
 
             Object uid;
             try {
-                // JEI 15.x: getUniqueIdentifierForStack (на 19.x: getUidForStack)
+                // JEI 15.x: getUniqueIdentifierForStack (vs getUidForStack on 19.x)
                 uid = stackHelper.getUniqueIdentifierForStack(stack, UidContext.Ingredient);
             } catch (RuntimeException | LinkageError e) {
                 continue;

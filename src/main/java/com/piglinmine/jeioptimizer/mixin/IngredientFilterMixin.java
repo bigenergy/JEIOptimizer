@@ -21,35 +21,35 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Batched init для {@link IngredientFilter}. Forge 1.20.1 Mixin 0.8.5.
+ * Batched init for {@link IngredientFilter}. Forge 1.20.1 Mixin 0.8.5.
  *
- * <h3>Почему НЕТ {@code @At("HEAD")} на конструкторе</h3>
- * Mixin 0.8.5 annotation processor категорически запрещает любые точки кроме
- * {@code RETURN} на конструкторе ("Cannot inject into constructors at non-return
- * instructions"). На NeoForge 1.21.1 (Mixin 0.15) это смягчили — там HEAD
- * разрешён с static handler'ом. Тут — нет.
+ * <h3>Why we do NOT use {@code @At("HEAD")} on the constructor</h3>
+ * The Mixin 0.8.5 annotation processor categorically forbids any point other
+ * than {@code RETURN} on a constructor ("Cannot inject into constructors at
+ * non-return instructions"). NeoForge 1.21.1 (Mixin 0.15) relaxed this — HEAD
+ * works there with a static handler. Not here.
  *
- * <h3>Как обойти</h3>
- * Используем {@code @Unique}-поле {@code jeiopt$buffer} с инициализатором.
- * Mixin вставляет инициализаторы {@code @Unique} полей в КОНСТРУКТОР целевого
- * класса — то есть к моменту первого вызова {@code addIngredient(...)} буфер
- * уже создан.
+ * <h3>Workaround</h3>
+ * We use a {@code @Unique} field {@code jeiopt$buffer} with an initializer.
+ * Mixin injects initializers of {@code @Unique} fields into the CONSTRUCTOR of
+ * the target class — so by the first call to {@code addIngredient(...)} the
+ * buffer already exists.
  *
- * <h3>Логика</h3>
+ * <h3>Logic</h3>
  * <ol>
- *   <li>{@code addIngredient} в цикле конструктора видит непустой buffer
- *       → добавляет {@code info} туда и cancel'ит оригинал. Цикл крутится
- *       вхолостую (~50k пустых вызовов).</li>
- *   <li>{@code <init>} {@code RETURN} сбрасывает {@code buffer = null} и
- *       вызывает batch addAll (его параллелит {@link ElementSearchMixin}).</li>
- *   <li>После {@code RETURN} buffer == null → последующие {@code addIngredient}
- *       (из рантайма JEI / event listener'ов) работают нормально.</li>
+ *   <li>{@code addIngredient} inside the constructor loop sees a non-empty
+ *       buffer → appends {@code info} and cancels the original. The loop spins
+ *       no-op (~50k empty calls).</li>
+ *   <li>{@code <init>} {@code RETURN} resets {@code buffer = null} and calls
+ *       batch addAll (parallelized by {@link ElementSearchMixin}).</li>
+ *   <li>After {@code RETURN} buffer == null → later {@code addIngredient}
+ *       calls (from JEI runtime / event listeners) work normally.</li>
  * </ol>
  */
 @Mixin(value = IngredientFilter.class, remap = false)
 public abstract class IngredientFilterMixin {
 
-    // elementSearch НЕ final в JEI — rebuildItemFilter() его пересоздаёт.
+    // elementSearch is NOT final in JEI — rebuildItemFilter() reassigns it.
     @Shadow private IElementSearch elementSearch;
     @Shadow @Final private IIngredientManager ingredientManager;
     @Shadow @Final private IIngredientVisibility ingredientVisibility;
@@ -58,24 +58,24 @@ public abstract class IngredientFilterMixin {
     @Shadow public abstract <V> void addIngredient(IListElementInfo<V> info);
 
     /**
-     * Сигнал "конструктор отработал" — выставляется в TAIL.
-     * Defaults to false (boolean default) → во время init он гарантированно false,
-     * даже если Mixin не смержил field initializer.
+     * "Constructor finished" signal — set in TAIL.
+     * Defaults to false (boolean default) → during init it's guaranteed false
+     * even if Mixin didn't merge the field initializer.
      */
     @Unique
     private boolean jeiopt$initDone = false;
 
     /**
-     * Init-batch буфер. Lazy-init на первое использование — на случай если
-     * Mixin не смержил initializer корректно (защита от версионных багов 0.8.5).
+     * Init-batch buffer. Lazy-init on first use in case Mixin didn't merge the
+     * initializer correctly (guard against Mixin 0.8.5 version bugs).
      */
     @Unique
     private List<IListElementInfo<?>> jeiopt$buffer;
 
     /**
-     * Перехватываем КАЖДЫЙ {@code addIngredient}. Пока {@code jeiopt$initDone == false}
-     * (мы в init-фазе) — сохраняем info в buffer и отменяем оригинал.
-     * После TAIL флаг становится true → последующие addIngredient проходят нормально.
+     * Intercept EVERY {@code addIngredient}. While {@code jeiopt$initDone == false}
+     * (we're in the init phase) — save info into the buffer and cancel the original.
+     * After TAIL the flag is true → later addIngredient calls pass through normally.
      */
     @Inject(
             method = "addIngredient",
@@ -93,11 +93,11 @@ public abstract class IngredientFilterMixin {
     }
 
     /**
-     * Конец конструктора — flush буфера через batch path.
+     * Constructor end — flush the buffer through the batch path.
      * <p>
-     * Сначала {@code jeiopt$buffer = null}, потом работаем — чтобы любой
-     * случайный {@code addIngredient} в нашей TAIL-логике (его там нет, но
-     * для безопасности) шёл нормальным путём, а не зацикливался.
+     * Set {@code jeiopt$buffer = null} first, then do work — so any stray
+     * {@code addIngredient} from our TAIL logic (none today, but defensive)
+     * takes the normal path instead of looping back.
      */
     @Inject(
             method = "<init>",
@@ -116,16 +116,16 @@ public abstract class IngredientFilterMixin {
             mezz.jei.common.config.IClientToggleState clientToggleState,
             CallbackInfo ci) {
 
-        this.jeiopt$initDone = true; // ← с этого момента addIngredient идёт мимо буфера
+        this.jeiopt$initDone = true; // ← from this point addIngredient bypasses the buffer
         List<IListElementInfo<?>> batch = this.jeiopt$buffer;
         this.jeiopt$buffer = null;
 
         if (batch == null || batch.isEmpty()) return;
 
-        // Config мог измениться пока цикл крутился — fail-safe: переиграть руками
+        // Config may have changed while the loop ran — fail-safe: replay manually
         if (!Config.enabled()) {
             for (IListElementInfo<?> info : batch) {
-                this.addIngredient(info); // теперь buffer == null → реальное добавление
+                this.addIngredient(info); // buffer == null now → real add path
             }
             return;
         }

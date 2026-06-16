@@ -6,11 +6,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Per-tab буфер для {@code ItemStackListFactoryMixin} (Tier B).
+ * Per-tab buffer for {@code ItemStackListFactoryMixin} (Tier B).
  * <p>
- * Лежит ВНЕ mixin-пакета — иначе Mixin processor бросает
- * {@code IllegalClassLoadError} потому что классы внутри mixin-пакета
- * не могут быть references из инструментированного байт-кода целевых классов.
+ * Kept OUTSIDE the mixin package — otherwise the Mixin processor throws
+ * {@code IllegalClassLoadError} because classes inside the mixin package
+ * cannot be referenced from the instrumented bytecode of target classes.
  */
 public final class TabBatch {
     public final List<Object> uids = new ArrayList<>(256);

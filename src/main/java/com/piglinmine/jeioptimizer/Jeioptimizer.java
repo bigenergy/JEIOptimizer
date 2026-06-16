@@ -11,9 +11,9 @@ import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 /**
- * JEIOptimizer — клиентский мод-ускоритель сборки ingredient filter'а JEI.
+ * JEIOptimizer — client-side mod that accelerates JEI's ingredient filter build.
  * <p>
- * Forge 1.20.1 backport. Подробности — см. NeoForge 1.21.1 ветку.
+ * Forge 1.20.1 backport. See the NeoForge 1.21.1 branch for full details.
  */
 @Mod(Jeioptimizer.MODID)
 public class Jeioptimizer {

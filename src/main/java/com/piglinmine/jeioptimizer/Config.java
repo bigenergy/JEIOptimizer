@@ -8,11 +8,11 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Конфиг JEIOptimizer (Forge 1.20.1).
+ * JEIOptimizer config (Forge 1.20.1).
  * <p>
- * Главный переключатель — {@link Mode}. Дефолт = PARALLEL_FULL.
- * Опасные Tier'ы (parallel_phases / parallel_creative_tabs) выключены по дефолту —
- * в нашем тесте на 1.21.1 они роняли моды и/или теряли айтемы.
+ * Main switch — {@link Mode}. Default = PARALLEL_FULL.
+ * Risky tiers (parallel_phases / parallel_creative_tabs) are off by default —
+ * in our 1.21.1 testing they crashed mods and/or lost items.
  */
 public class Config {
 

@@ -18,21 +18,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
- * <b>Tier A</b> — параллельный {@link PluginCaller#callOnPlugins}.
+ * <b>Tier A</b> — parallel {@link PluginCaller#callOnPlugins}.
  * <p>
- * JEI обходит ~47 плагинов одним потоком в каждой фазе. Самая жирная фаза —
- * "Registering recipes" ≈ 5 секунд (jei:minecraft 1.6s, botanypots 714ms,
+ * JEI walks ~47 plugins single-threaded in each phase. The heaviest phase is
+ * "Registering recipes" ≈ 5 seconds (jei:minecraft 1.6s, botanypots 714ms,
  * silentgear 500ms, industrialforegoing 469ms, ...).
  * <p>
- * Параллелим только whitelisted фазы (см. {@code Config.PARALLEL_PHASES}).
- * Дефолт: только "Registering recipes". Можно расширить через конфиг.
+ * We only parallelize whitelisted phases (see {@code Config.PARALLEL_PHASES}).
+ * Default: just "Registering recipes". Can be extended via config.
  * <p>
- * Thread-safety общих collector'ов ({@code RecipeRegistration} → {@code RecipeManagerInternal})
- * обеспечивается {@link RecipeManagerInternalMixin} который оборачивает
- * {@code addRecipes} в {@code synchronized(this)}.
+ * Thread-safety of shared collectors ({@code RecipeRegistration} → {@code RecipeManagerInternal})
+ * is provided by RecipeManagerInternalMixin, which wraps
+ * {@code addRecipes} in {@code synchronized(this)}.
  * <p>
- * Ошибки плагинов изолированы try/catch — упавший плагин не валит остальных
- * (как и в оригинале). Vanilla plugin исключение — бросаем дальше (как в оригинале).
+ * Plugin errors are isolated via try/catch — a crashing plugin doesn't kill the
+ * others (same as vanilla). Vanilla plugin exception is rethrown (same as vanilla).
  */
 @Mixin(value = PluginCaller.class, remap = false)
 public abstract class PluginCallerMixin {
@@ -45,7 +45,7 @@ public abstract class PluginCallerMixin {
             CallbackInfo ci) {
 
         if (!Config.shouldParallelizePhase(title)) return;
-        if (plugins.size() < 4) return; // меньше 4 — не имеет смысла
+        if (plugins.size() < 4) return; // fewer than 4 — not worth it
 
         ci.cancel();
 
@@ -61,7 +61,7 @@ public abstract class PluginCallerMixin {
                             func.accept(plugin);
                         } catch (RuntimeException | LinkageError e) {
                             if (plugin instanceof VanillaPlugin) {
-                                // Vanilla error — критично, как в оригинале
+                                // Vanilla error — critical, same as vanilla
                                 throw e;
                             }
                             errors.incrementAndGet();
@@ -77,7 +77,7 @@ public abstract class PluginCallerMixin {
             throw new RuntimeException("[JEIOptimizer] interrupted during parallel '" + title + "'", ie);
         } catch (ExecutionException ee) {
             Throwable cause = ee.getCause();
-            // VanillaPlugin error — пробросим
+            // VanillaPlugin error — rethrow
             if (cause instanceof RuntimeException re) throw re;
             if (cause instanceof Error err) throw err;
             throw new RuntimeException("[JEIOptimizer] failed during parallel '" + title + "'", cause);

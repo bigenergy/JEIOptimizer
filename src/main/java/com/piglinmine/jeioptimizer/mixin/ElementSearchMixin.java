@@ -23,10 +23,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinTask;
 import java.util.stream.Collectors;
 
 /** Parallel {@link ElementSearch#addAll}: each prefix owns its own storage, so we fan out across them. */
@@ -65,22 +67,33 @@ public abstract class ElementSearchMixin {
 
         long tAfterAll = System.nanoTime();
 
-        // 2. Per-prefix in parallel. Each prefix writes to its OWN storage.
+        // 2. Split: tooltip prefix stays on the calling thread (its mod-code may assume main thread).
+        //    Everything else fans out to the worker pool, running concurrently with tooltip work.
         Collection<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixes =
                 this.prefixedSearchables.values();
+        List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> tooltipPrefixes = new ArrayList<>();
+        List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> otherPrefixes = new ArrayList<>();
+        for (PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p : prefixes) {
+            if (p.getMode() == SearchMode.DISABLED) continue;
+            (jeiopt$isTooltipPrefix(p) ? tooltipPrefixes : otherPrefixes).add(p);
+        }
+
+        ForkJoinTask<?> bg = WorkerPool.get().submit(() ->
+                otherPrefixes.parallelStream().forEach(p -> jeiopt$fillPrefix(p, infos, mode))
+        );
+
+        for (PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p : tooltipPrefixes) {
+            jeiopt$fillPrefix(p, infos, Config.Mode.PARALLEL_PREFIX);
+        }
 
         try {
-            WorkerPool.get().submit(() ->
-                    prefixes.parallelStream()
-                            .filter(p -> p.getMode() != SearchMode.DISABLED)
-                            .forEach(p -> jeiopt$fillPrefix(p, infos, mode))
-            ).get();
+            bg.get();
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("JEIOptimizer interrupted during filter build", ie);
         } catch (ExecutionException ee) {
             Jeioptimizer.LOGGER.error("[JEIOptimizer] Parallel addAll failed — falling back to sequential", ee.getCause());
-            jeiopt$sequentialFallback(infos, prefixes);
+            jeiopt$sequentialFallback(infos, otherPrefixes);
         }
 
         if (Config.LOG_TIMING_ENABLED) {
@@ -105,11 +118,7 @@ public abstract class ElementSearchMixin {
 
         ISearchStorage<IListElement<?>> storage = prefix.getSearchStorage();
 
-        // Tooltip prefix fires ItemTooltipEvent → arbitrary mod code that may need the main thread. Keep sequential.
-        final boolean isTooltipPrefix = jeiopt$isTooltipPrefix(prefix);
-        final Config.Mode effective = isTooltipPrefix ? Config.Mode.PARALLEL_PREFIX : mode;
-
-        if (effective == Config.Mode.PARALLEL_FULL) {
+        if (mode == Config.Mode.PARALLEL_FULL) {
             // Tokenize in parallel; storage.put stays sequential (suffix tree is not thread-safe).
             List<Map.Entry<IListElement<?>, Collection<String>>> tokens = infos.parallelStream()
                     .map(info -> new AbstractMap.SimpleEntry<IListElement<?>, Collection<String>>(
@@ -122,7 +131,6 @@ public abstract class ElementSearchMixin {
             return;
         }
 
-        // PARALLEL_PREFIX (or tooltip downgrade): tokenize + put in this thread.
         for (IListElementInfo<?> info : infos) {
             Collection<String> strings = jeiopt$safeGetStrings(prefix, info);
             IListElement<?> el = info.getElement();

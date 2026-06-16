@@ -20,30 +20,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 
 /**
- * Перенаправляет цикл из {@code IngredientFilter} конструктора
+ * Redirects the loop in the {@code IngredientFilter} constructor
  * <pre>
  *   for (IListElementInfo&lt;?&gt; ingredient : ingredients) {
- *       addIngredient(ingredient);  // ← 50,000 итераций
+ *       addIngredient(ingredient);  // ← 50,000 iterations
  *   }
  * </pre>
- * на один batch-вызов {@link IElementSearch#addAll}, который уже
- * оптимизирован {@link ElementSearchMixin}.
+ * into a single batch call to {@link IElementSearch#addAll}, which is already
+ * optimized by {@link ElementSearchMixin}.
  *
- * <h3>Почему ThreadLocal</h3>
- * Mixin запрещает non-static {@code @Inject} на {@code @At("HEAD")} конструктора —
- * там ещё не вызван {@code super()} и {@code this} невалиден. Поэтому HEAD-handler
- * мы делаем {@code static} + используем {@link ThreadLocal} для проброса
- * {@code ingredients} в TAIL-handler того же потока.
+ * <h3>Why ThreadLocal</h3>
+ * Mixin forbids non-static {@code @Inject} at constructor {@code @At("HEAD")} —
+ * at that point {@code super()} hasn't run and {@code this} is invalid. So the
+ * HEAD handler is {@code static} and we use a {@link ThreadLocal} to pass
+ * {@code ingredients} to the TAIL handler on the same thread.
  *
- * <h3>Почему не сломаем рантайм</h3>
- * Глушим {@code addIngredient} только пока {@code jeiopt$initCaptured} держит
- * не-null значение в этом потоке. В TAIL мы её сбрасываем. Все последующие
- * {@code addIngredient} (из плагинов / визибилити-эвентов) работают как обычно.
+ * <h3>Why we won't break the runtime</h3>
+ * We suppress {@code addIngredient} only while {@code jeiopt$initCaptured} holds
+ * a non-null value on this thread. We clear it in TAIL. All later
+ * {@code addIngredient} calls (from plugins / visibility events) work normally.
  */
 @Mixin(value = IngredientFilter.class, remap = false)
 public abstract class IngredientFilterMixin {
 
-    // elementSearch без @Final — в JEI оно не final (rebuildItemFilter() пересоздаёт).
+    // elementSearch without @Final — JEI's field isn't final (rebuildItemFilter() reassigns it).
     @Shadow private IElementSearch elementSearch;
     @Shadow @Final private IIngredientManager ingredientManager;
     @Shadow @Final private IIngredientVisibility ingredientVisibility;
@@ -51,14 +51,14 @@ public abstract class IngredientFilterMixin {
     @Shadow private native void notifyListenersOfChange();
 
     /**
-     * Per-thread окно «мы внутри init-batch'а». Заполняется в HEAD,
-     * читается в addIngredient (cancellable), очищается в TAIL.
+     * Per-thread "we are inside init-batch" window. Set in HEAD,
+     * read in addIngredient (cancellable), cleared in TAIL.
      */
     @Unique
     private static final ThreadLocal<List<IListElementInfo<?>>> jeiopt$initCaptured = new ThreadLocal<>();
 
     /**
-     * HEAD конструктора. ОБЯЗАН быть static — это до super().
+     * Constructor HEAD. MUST be static — this runs before super().
      */
     @Inject(
             method = "<init>",
@@ -87,7 +87,7 @@ public abstract class IngredientFilterMixin {
             cancellable = true
     )
     private void jeiopt$skipDuringBatchInit(IListElementInfo<?> info, CallbackInfo ci) {
-        // Глушим ТОЛЬКО когда мы внутри нашего init-batch'а на этом треде.
+        // Suppress ONLY while we are inside our init-batch on this thread.
         if (jeiopt$initCaptured.get() != null) {
             ci.cancel();
         }
@@ -114,8 +114,8 @@ public abstract class IngredientFilterMixin {
         if (batch == null) return;
         jeiopt$initCaptured.remove();
 
-        // Tier C: async build. Игрок попадает в мир сразу, JEI поиск становится
-        // доступен через 1-2 секунды. На время сборки getElements() вернёт пусто.
+        // Tier C: async build. The player enters the world immediately, JEI search
+        // becomes usable 1-2 seconds later. While building, getElements() returns empty.
         if (Config.ASYNC_BUILD) {
             jeiopt$kickAsyncBuild(batch);
             return;
@@ -128,16 +128,16 @@ public abstract class IngredientFilterMixin {
     private void jeiopt$buildSync(List<IListElementInfo<?>> batch) {
         long t0 = System.nanoTime();
 
-        // 1) updateHiddenState — sequential, дёшево.
+        // 1) updateHiddenState — sequential, cheap.
         for (IListElementInfo<?> info : batch) {
             jeiopt$updateHidden(info);
         }
         long tAfterHidden = System.nanoTime();
 
-        // 2) Batch add — здесь стреляет ElementSearchMixin#parallelAddAll.
+        // 2) Batch add — this is where ElementSearchMixin#parallelAddAll fires.
         this.elementSearch.addAll(batch, this.ingredientManager);
 
-        // 3) Один инвалидейт вместо 50k.
+        // 3) One invalidation instead of 50k.
         this.invalidateCache();
 
         long now = System.nanoTime();
@@ -167,8 +167,8 @@ public abstract class IngredientFilterMixin {
                 }
                 this.elementSearch.addAll(batch, this.ingredientManager);
                 this.invalidateCache();
-                // Дёргаем listeners на main thread — UI overlay должен пере-отрендерить
-                // ingredient grid когда оно станет доступным.
+                // Fire listeners on the main thread — UI overlay needs to re-render the
+                // ingredient grid once it's available.
                 net.minecraft.client.Minecraft.getInstance().execute(this::notifyListenersOfChange);
 
                 long ms = (System.nanoTime() - t0) / 1_000_000;

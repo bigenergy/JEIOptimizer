@@ -4,10 +4,9 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
 
 /**
- * Глобальный пул воркеров для всех Tier'ов JEIOptimizer.
- * Lazy-init на первое обращение — не платим если мод не включался.
- * <p>
- * Daemon-треды + пониженный priority — не мешают main thread'у и не держат JVM.
+ * Shared worker pool. Workers inherit the caller's ContextClassLoader —
+ * default AppClassLoader can't see mod-patched classes and breaks ServiceLoader
+ * static init triggered by tooltip handlers.
  */
 public final class WorkerPool {
     private WorkerPool() {}
@@ -20,10 +19,16 @@ public final class WorkerPool {
         synchronized (WorkerPool.class) {
             if (pool != null) return pool;
             int n = Config.effectiveWorkers();
+
+            final ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+
             pool = new ForkJoinPool(
                     n,
                     fjp -> {
                         ForkJoinWorkerThread t = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(fjp);
+                        if (contextLoader != null) {
+                            t.setContextClassLoader(contextLoader);
+                        }
                         t.setName("JEIOptimizer-Worker-" + t.getPoolIndex());
                         t.setDaemon(true);
                         t.setPriority(Thread.NORM_PRIORITY - 1);
@@ -32,7 +37,9 @@ public final class WorkerPool {
                     null,
                     false
             );
-            Jeioptimizer.LOGGER.info("[JEIOptimizer] Started ForkJoinPool with {} workers", n);
+            Jeioptimizer.LOGGER.info(
+                    "[JEIOptimizer] Started ForkJoinPool with {} workers (contextClassLoader={})",
+                    n, contextLoader == null ? "null" : contextLoader.getClass().getName());
             return pool;
         }
     }

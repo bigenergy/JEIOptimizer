@@ -10,25 +10,26 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Конфиг JEIOptimizer.
+ * JEIOptimizer config.
  *
- * <h3>Tier 1 — filter build (готов с v1.0)</h3>
- * {@link Mode} — параллельный {@code ElementSearch.addAll}. Дефолт PARALLEL_PREFIX.
+ * <h3>Tier 1 — filter build (shipping since v1.0)</h3>
+ * {@link Mode} — parallel {@code ElementSearch.addAll}. Default PARALLEL_PREFIX.
  *
  * <h3>Tier A — Parallel Plugin Registration (v1.1)</h3>
- * {@code parallel_plugin_phases} — список фаз PluginCaller.callOnPlugins,
- * которые крутить параллельно. По дефолту только "Registering recipes" —
- * самый жирный (~5 сек последовательно).
+ * {@code parallel_plugin_phases} — list of PluginCaller.callOnPlugins phases
+ * to run in parallel. Default is just "Registering recipes" — the heaviest
+ * one (~5 sec sequentially).
  *
  * <h3>Tier B — Parallel Creative Tabs (v1.1)</h3>
- * {@code parallel_creative_tabs} — параллельное построение CreativeModeTab'ов
- * внутри VanillaPlugin.registerIngredients. Дефолт включён. Жирный профит
- * (~3 сек), но риск зависит от того насколько thread-safe мод-табы.
+ * {@code parallel_creative_tabs} — parallel build of CreativeModeTabs inside
+ * VanillaPlugin.registerIngredients. Enabled by default. Big win (~3 sec)
+ * but risk depends on how thread-safe the mod tabs are.
  *
  * <h3>Tier C — Async Filter Build (v1.1)</h3>
- * {@code async_filter_build} — IngredientFilter строится в фоне после конструктора.
- * Игрок попадает в мир сразу, JEI поиск становится доступен через пару секунд.
- * Дефолт false (психологически странно если игрок открывает JEI и видит пусто).
+ * {@code async_filter_build} — IngredientFilter is built in the background after
+ * the constructor. The player enters the world immediately, JEI search becomes
+ * usable a couple of seconds later. Default false (psychologically weird if a
+ * player opens JEI and sees nothing).
  */
 @EventBusSubscriber(modid = Jeioptimizer.MODID, bus = EventBusSubscriber.Bus.MOD)
 public class Config {
@@ -60,7 +61,7 @@ public class Config {
     // --- Tier A: parallel plugin registration ---
     // EXPERIMENTAL: many JEI plugins are not thread-safe. In testing, theurgy/ars_nouveau/etc
     // crashed when their registerRecipes() was called concurrently. Default — empty (disabled).
-    // Если хочешь попробовать — добавь "Registering recipes" в список, тестируй на чистом моде.
+    // If you want to try — add "Registering recipes" to the list and test on a clean mod set.
     private static final ModConfigSpec.ConfigValue<List<? extends String>> PARALLEL_PLUGIN_PHASES = BUILDER
             .comment("EXPERIMENTAL. Phase names of PluginCaller.callOnPlugins to run in parallel.",
                     "Each plugin's handler runs concurrently. Mods NOT thread-safe in their JEI plugins",

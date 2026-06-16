@@ -10,18 +10,18 @@ import org.spongepowered.asm.mixin.Mixin;
 import java.util.List;
 
 /**
- * Поддержка для Tier A: параллельный {@link PluginCallerMixin} рискует тем,
- * что разные плагины могут одновременно вызвать {@link RecipeManagerInternal#addRecipes}
- * на одной и той же {@code RecipeType} → гонка на внутреннем ArrayList.
+ * Support for Tier A: parallel {@link PluginCallerMixin} risks letting different
+ * plugins call {@link RecipeManagerInternal#addRecipes} on the same
+ * {@code RecipeType} concurrently → race on the internal ArrayList.
  * <p>
- * Лечим тупо: оборачиваем {@code addRecipes} в {@code synchronized(this)}.
+ * Fix the dumb way: wrap {@code addRecipes} in {@code synchronized(this)}.
  * <ul>
- *     <li>Vanilla — почти бесплатно (microseconds на add)</li>
- *     <li>Parallel — позволяет плагин-коду (~100ms каждый) идти параллельно,
- *     блокируясь только на момент финальной вставки</li>
+ *     <li>Vanilla — basically free (microseconds per add)</li>
+ *     <li>Parallel — lets plugin code (~100ms each) run in parallel and only
+ *     blocks during the final insert</li>
  * </ul>
- * {@code recipeCategoriesVisibleCache = null} тоже защищён этим же монитором,
- * так что одновременный reset из разных потоков безопасен.
+ * {@code recipeCategoriesVisibleCache = null} is guarded by the same monitor,
+ * so simultaneous reset from different threads is safe.
  */
 @Mixin(value = RecipeManagerInternal.class, remap = false)
 public abstract class RecipeManagerInternalMixin {
@@ -32,13 +32,13 @@ public abstract class RecipeManagerInternalMixin {
             List<T> recipes,
             Operation<Void> original) {
 
-        // Если параллель не включена — оригинал без оверхеда
+        // If parallelism isn't enabled — call original, zero overhead
         if (Config.PARALLEL_PHASES.isEmpty()) {
             original.call(recipeType, recipes);
             return;
         }
 
-        // Синхронизируемся на самом инстансе — все addRecipes сериализуются между собой
+        // Synchronize on the instance itself — all addRecipes serialize against each other
         synchronized (this) {
             original.call(recipeType, recipes);
         }

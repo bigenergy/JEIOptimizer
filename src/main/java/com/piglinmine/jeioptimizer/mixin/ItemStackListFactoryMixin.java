@@ -33,23 +33,23 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * <b>Tier B</b> — параллельное построение CreativeModeTab контента внутри
+ * <b>Tier B</b> — parallel build of CreativeModeTab contents inside
  * {@link ItemStackListFactory#create}.
  * <p>
- * В оригинале (см. JEI 1.21.1 sources): главный поток обходит ~50 креативных табов,
- * каждому вызывает {@code tab.buildContents(displayParameters)} (мод-код!) и собирает
- * displayItems + searchTabDisplayItems в общий List + Set для уникальности.
+ * In the original (see JEI 1.21.1 sources): the main thread walks ~50 creative tabs,
+ * calls {@code tab.buildContents(displayParameters)} on each (mod code!) and collects
+ * displayItems + searchTabDisplayItems into a shared List + Set for uniqueness.
  * <p>
- * Сложности параллели:
+ * Parallelism challenges:
  * <ul>
- *     <li>{@code tab.buildContents()} — 99% табов чисто-вычислительные, но один-два
- *     могут трогать main-thread-only state. Try/catch вокруг каждого таба, fall-back
- *     на sequential для всего метода если что-то падает.</li>
- *     <li>Уникальность по UID — каждый таб собирает свой локальный набор, финальный
- *     merge sequential.</li>
+ *     <li>{@code tab.buildContents()} — 99% of tabs are pure-compute, but one or two
+ *     may touch main-thread-only state. Try/catch around each tab, fall back to the
+ *     sequential vanilla path for the whole method if something crashes.</li>
+ *     <li>UID uniqueness — each tab collects its own local set, final merge runs
+ *     sequentially.</li>
  * </ul>
  * <p>
- * При parallel ошибке — возвращаемся (return) и даём JEI пройти оригинальным путём.
+ * On a parallel error we just return and let JEI walk the original path.
  */
 @Mixin(value = ItemStackListFactory.class, remap = false)
 public abstract class ItemStackListFactoryMixin {
@@ -73,8 +73,8 @@ public abstract class ItemStackListFactoryMixin {
                     "[JEIOptimizer] ItemStackListFactory.create (parallel) — {} items in {} ms",
                     result.size(), ms);
         } catch (Throwable t) {
-            // Любая ошибка → fallback на оригинал.
-            // НЕ cancel'им CallbackInfo → JEI выполнит свой код.
+            // Any error → fall back to the original.
+            // Do NOT cancel CallbackInfo → JEI runs its own code.
             Jeioptimizer.LOGGER.warn(
                     "[JEIOptimizer] Parallel ItemStackListFactory failed — falling back to sequential vanilla path",
                     t);
@@ -109,8 +109,8 @@ public abstract class ItemStackListFactoryMixin {
         CreativeModeTab.ItemDisplayParameters displayParameters =
                 new CreativeModeTab.ItemDisplayParameters(features, hasOperatorPerms, level.registryAccess());
 
-        // Каждый таб собирает свои items в локальный TabBatch — никаких общих коллекций.
-        // Параллелим через наш пул чтобы не мешать MC ForkJoinPool.commonPool().
+        // Each tab collects its items into a local TabBatch — no shared collections.
+        // Run on our own pool so we don't fight MC's ForkJoinPool.commonPool().
         List<CreativeModeTab> tabs = new ArrayList<>(CreativeModeTabs.allTabs());
 
         List<TabBatch> batches = WorkerPool.get().submit(() ->
@@ -120,7 +120,7 @@ public abstract class ItemStackListFactoryMixin {
                         .toList()
         ).get();
 
-        // Sequential merge — глобальная уникальность по UID.
+        // Sequential merge — global UID uniqueness.
         Set<Object> globalUidSet = new HashSet<>();
         List<ItemStack> itemList = new ArrayList<>();
         for (TabBatch b : batches) {
@@ -141,7 +141,7 @@ public abstract class ItemStackListFactoryMixin {
             StackHelper stackHelper,
             ItemStackHelper itemStackHelper) {
 
-        // Пропускаем не-категории (поисковый таб и т.д.) — как в оригинале
+        // Skip non-category tabs (search tab etc.) — same as vanilla
         if (tab.getType() != CreativeModeTab.Type.CATEGORY) return null;
 
         try {
@@ -198,7 +198,7 @@ public abstract class ItemStackListFactoryMixin {
             }
             if (uid == null) continue;
 
-            // tab-local uniqueness — но global уникальность обеспечивается merge'м
+            // tab-local uniqueness — global uniqueness is enforced by the merge step
             if (tabUidSet.add(uid)) {
                 batch.uids.add(uid);
                 batch.items.add(stack);

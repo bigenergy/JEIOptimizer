@@ -69,14 +69,16 @@ public abstract class ElementSearchMixin {
 
         // 2. Split: tooltip prefix stays on the calling thread (its mod-code may assume main thread).
         //    Everything else fans out to the worker pool, running concurrently with tooltip work.
-        Collection<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixes =
-                this.prefixedSearchables.values();
         List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> tooltipPrefixes = new ArrayList<>();
         List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> otherPrefixes = new ArrayList<>();
-        for (PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p : prefixes) {
+        for (Map.Entry<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
+                       PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> e
+                : this.prefixedSearchables.entrySet()) {
+            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p = e.getValue();
             if (p.getMode() == SearchMode.DISABLED) continue;
-            (jeiopt$isTooltipPrefix(p) ? tooltipPrefixes : otherPrefixes).add(p);
+            (jeiopt$isTooltipPrefix(e.getKey(), p) ? tooltipPrefixes : otherPrefixes).add(p);
         }
+        int prefixCount = tooltipPrefixes.size() + otherPrefixes.size();
 
         ForkJoinTask<?> bg = WorkerPool.get().submit(() ->
                 otherPrefixes.parallelStream().forEach(p -> jeiopt$fillPrefix(p, infos, mode))
@@ -101,7 +103,7 @@ public abstract class ElementSearchMixin {
             Jeioptimizer.LOGGER.info(
                     "[JEIOptimizer] addAll done — {} infos × {} prefixes in {} ms (allElements: {} ms, parallel build: {} ms, mode={})",
                     infos.size(),
-                    prefixes.size(),
+                    prefixCount,
                     (now - t0) / 1_000_000,
                     (tAfterAll - t0) / 1_000_000,
                     (now - tAfterAll) / 1_000_000,
@@ -155,15 +157,44 @@ public abstract class ElementSearchMixin {
     }
 
     @Unique
-    private static boolean jeiopt$isTooltipPrefix(PrefixedSearchable<?, ?> prefix) {
-        try {
-            String cls = prefix.getClass().getName();
-            if (cls.toLowerCase(java.util.Locale.ROOT).contains("tooltip")) return true;
-            String modeStr = String.valueOf(prefix.getMode());
-            return modeStr.toLowerCase(java.util.Locale.ROOT).contains("tooltip");
-        } catch (Throwable t) {
-            return false;
+    private static final java.util.concurrent.atomic.AtomicBoolean jeiopt$prefixesLogged =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * JEI tags each prefix with a single char ('#' tooltip, '@' modId, '$' tag, ...).
+     * We use that as the source of truth and fall back to class-name only if reflection fails.
+     */
+    @Unique
+    private static boolean jeiopt$isTooltipPrefix(PrefixInfo<?, ?> info, PrefixedSearchable<?, ?> prefix) {
+        Character ch = jeiopt$prefixChar(info);
+        if (Config.LOG_TIMING_ENABLED && jeiopt$prefixesLogged.compareAndSet(false, true)) {
+            Jeioptimizer.LOGGER.info(
+                    "[JEIOptimizer] prefix detected: char={}, infoClass={}, prefixClass={}",
+                    ch, info.getClass().getName(), prefix.getClass().getName());
         }
+        if (ch != null) return ch == '#';
+
+        String cls = info.getClass().getName() + "|" + prefix.getClass().getName();
+        return cls.toLowerCase(java.util.Locale.ROOT).contains("tooltip");
+    }
+
+    @Unique
+    private static Character jeiopt$prefixChar(PrefixInfo<?, ?> info) {
+        try {
+            java.lang.reflect.Method m = info.getClass().getMethod("getPrefix");
+            Object r = m.invoke(info);
+            if (r instanceof Character) return (Character) r;
+        } catch (Throwable ignored) {}
+        try {
+            for (java.lang.reflect.Field f : info.getClass().getDeclaredFields()) {
+                if (f.getType() == char.class || f.getType() == Character.class) {
+                    f.setAccessible(true);
+                    Object v = f.get(info);
+                    if (v instanceof Character) return (Character) v;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     @Unique

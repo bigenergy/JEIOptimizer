@@ -33,27 +33,24 @@ java {
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
 
-    copyIdeResources = true
-
     runs {
-        configureEach {
+        client {
             workingDirectory project.file('run')
             property 'forge.logging.markers', 'REGISTRIES'
             property 'forge.logging.console.level', 'debug'
-            property 'forge.enabledGameTestNamespaces', mod_id
-
             mods {
                 "${mod_id}" { source sourceSets.main }
             }
         }
 
-        client {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
-
         server {
-            property 'forge.enabledGameTestNamespaces', mod_id
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
             args '--nogui'
+            mods {
+                "${mod_id}" { source sourceSets.main }
+            }
         }
     }
 }

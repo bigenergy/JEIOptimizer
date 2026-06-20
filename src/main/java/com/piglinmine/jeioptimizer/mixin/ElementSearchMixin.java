@@ -3,10 +3,6 @@ package com.piglinmine.jeioptimizer.mixin;
 import com.piglinmine.jeioptimizer.Config;
 import com.piglinmine.jeioptimizer.Jeioptimizer;
 import com.piglinmine.jeioptimizer.WorkerPool;
-import mezz.jei.api.ingredients.IIngredientHelper;
-import mezz.jei.api.ingredients.ITypedIngredient;
-import mezz.jei.api.ingredients.subtypes.UidContext;
-import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.core.search.ISearchStorage;
 import mezz.jei.core.search.PrefixInfo;
 import mezz.jei.core.search.PrefixedSearchable;
@@ -47,7 +43,6 @@ public abstract class ElementSearchMixin {
     @Inject(method = "addAll", at = @At("HEAD"), cancellable = true)
     private void jeiopt$parallelAddAll(
             Collection<IListElementInfo<?>> infos,
-            IIngredientManager ingredientManager,
             CallbackInfo ci) {
 
         Config.Mode mode = Config.MODE;
@@ -59,10 +54,9 @@ public abstract class ElementSearchMixin {
 
         long t0 = System.nanoTime();
 
-        // 1. allElements — sequential, cheap (HashMap.put × N).
+        // 1. allElements — sequential, cheap (HashMap.put × N). JEI 11.x keys by ITypedIngredient.
         for (IListElementInfo<?> info : infos) {
-            Object uid = jeiopt$uid(info.getTypedIngredient(), ingredientManager);
-            this.allElements.put(uid, info.getElement());
+            this.allElements.put(info.getTypedIngredient(), info.getElement());
         }
 
         long tAfterAll = System.nanoTime();
@@ -212,10 +206,4 @@ public abstract class ElementSearchMixin {
         }
     }
 
-    @Unique
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Object jeiopt$uid(ITypedIngredient<?> typed, IIngredientManager mgr) {
-        IIngredientHelper helper = mgr.getIngredientHelper(typed.getType());
-        return helper.getUniqueId(typed.getIngredient(), UidContext.Ingredient);
-    }
 }

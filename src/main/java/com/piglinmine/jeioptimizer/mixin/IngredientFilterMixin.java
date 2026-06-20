@@ -73,7 +73,7 @@ public abstract class IngredientFilterMixin {
         long t0 = System.nanoTime();
         for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
         long tAfterHidden = System.nanoTime();
-        this.elementSearch.addAll(batch, this.ingredientManager);
+        this.elementSearch.addAll(batch);
         this.invalidateCache();
 
         long now = System.nanoTime();
@@ -99,7 +99,7 @@ public abstract class IngredientFilterMixin {
         com.piglinmine.jeioptimizer.WorkerPool.get().execute(() -> {
             try {
                 for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
-                this.elementSearch.addAll(batch, this.ingredientManager);
+                this.elementSearch.addAll(batch);
                 this.invalidateCache();
                 net.minecraft.client.Minecraft.getInstance().execute(this::notifyListenersOfChange);
 

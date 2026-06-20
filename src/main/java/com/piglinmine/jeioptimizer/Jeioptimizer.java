@@ -13,7 +13,7 @@ import org.slf4j.Logger;
 /**
  * JEIOptimizer — client-side mod that accelerates JEI's ingredient filter build.
  * <p>
- * Forge 1.20.1 backport. See the NeoForge 1.21.1 branch for full details.
+ * Forge 1.19.2 backport. See the NeoForge 1.21.1 branch for full details.
  */
 @Mod(Jeioptimizer.MODID)
 public class Jeioptimizer {

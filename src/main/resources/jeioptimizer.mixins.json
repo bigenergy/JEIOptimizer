@@ -8,9 +8,7 @@
   ],
   "client": [
     "ElementSearchMixin",
-    "IngredientFilterMixin",
-    "ItemStackListFactoryMixin",
-    "PluginCallerMixin"
+    "IngredientFilterMixin"
   ],
   "injectors": {
     "defaultRequire": 1

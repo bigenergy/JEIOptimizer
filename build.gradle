@@ -1,9 +1,11 @@
 buildscript {
     repositories {
+        maven { url = 'https://maven.minecraftforge.net/' }
         maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
         mavenCentral()
     }
     dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
         classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
     }
 }
@@ -11,10 +13,10 @@ buildscript {
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
     id 'maven-publish'
 }
 
+apply plugin: 'net.minecraftforge.gradle'
 apply plugin: 'org.spongepowered.mixin'
 
 group = mod_group_id
@@ -69,13 +71,11 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
-    // JEI 15.x для 1.20.1 Forge. Нужен ВЕСЬ jei-forge jar (не только API)
-    // потому что наши миксины таргетят internal классы (gui/library/common).
+    // JEI 11.8.x for 1.19.2 Forge. Need the full jei-forge jar (not just API)
+    // because our mixins target internal classes (gui/common).
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
     runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
 
-    // Mixin annotation processor (mixinextras не нужен — RecipeManagerInternalMixin удалён,
-    // parallel_phases по дефолту off из-за thread-safety проблем в plugin'ах)
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 

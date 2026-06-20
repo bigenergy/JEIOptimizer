@@ -17,8 +17,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import com.piglinmine.jeioptimizer.WorkerPool;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /** Batched init for IngredientFilter (JEI 11.8 / Forge 1.19.2). Signature-agnostic constructor hook. */
 @Mixin(value = IngredientFilter.class, remap = false)
@@ -71,7 +74,7 @@ public abstract class IngredientFilterMixin {
     @Unique
     private void jeiopt$buildSync(List<IListElementInfo<?>> batch) {
         long t0 = System.nanoTime();
-        for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
+        jeiopt$parallelUpdateHidden(batch);
         long tAfterHidden = System.nanoTime();
         this.elementSearch.addAll(batch);
         this.invalidateCache();
@@ -96,9 +99,9 @@ public abstract class IngredientFilterMixin {
                         "({} ingredients, main thread released NOW)",
                 batch.size());
 
-        com.piglinmine.jeioptimizer.WorkerPool.get().execute(() -> {
+        WorkerPool.get().execute(() -> {
             try {
-                for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
+                jeiopt$parallelUpdateHidden(batch);
                 this.elementSearch.addAll(batch);
                 this.invalidateCache();
                 net.minecraft.client.Minecraft.getInstance().execute(this::notifyListenersOfChange);
@@ -109,6 +112,23 @@ public abstract class IngredientFilterMixin {
                 Jeioptimizer.LOGGER.error("[JEIOptimizer] ASYNC build failed", t);
             }
         });
+    }
+
+    @Unique
+    private void jeiopt$parallelUpdateHidden(List<IListElementInfo<?>> batch) {
+        try {
+            WorkerPool.get().submit(() ->
+                    batch.parallelStream().forEach(this::jeiopt$updateHidden)
+            ).get();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
+        } catch (ExecutionException ee) {
+            Jeioptimizer.LOGGER.warn(
+                    "[JEIOptimizer] parallel updateHidden failed — falling back to sequential",
+                    ee.getCause());
+            for (IListElementInfo<?> info : batch) jeiopt$updateHidden(info);
+        }
     }
 
     @Unique

@@ -27,7 +27,7 @@ public class Jeioptimizer {
     public Jeioptimizer(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
 
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
             LOGGER.info("[JEIOptimizer] Loaded on CLIENT — mixins will be applied to JEI.");
         } else {
             LOGGER.info("[JEIOptimizer] Loaded on DEDICATED SERVER — no-op (this mod is client-side only).");

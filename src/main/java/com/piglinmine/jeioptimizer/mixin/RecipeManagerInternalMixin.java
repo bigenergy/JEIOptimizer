@@ -3,7 +3,7 @@ package com.piglinmine.jeioptimizer.mixin;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.piglinmine.jeioptimizer.Config;
-import mezz.jei.api.recipe.RecipeType;
+import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.library.recipes.RecipeManagerInternal;
 import org.spongepowered.asm.mixin.Mixin;
 
@@ -28,7 +28,7 @@ public abstract class RecipeManagerInternalMixin {
 
     @WrapMethod(method = "addRecipes")
     private <T> void jeiopt$synchronizeAddRecipes(
-            RecipeType<T> recipeType,
+            IRecipeType<T> recipeType,
             List<T> recipes,
             Operation<Void> original) {
 

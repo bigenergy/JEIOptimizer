@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * usable a couple of seconds later. Default false (psychologically weird if a
  * player opens JEI and sees nothing).
  */
-@EventBusSubscriber(modid = Jeioptimizer.MODID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = Jeioptimizer.MODID)
 public class Config {
 
     public enum Mode {

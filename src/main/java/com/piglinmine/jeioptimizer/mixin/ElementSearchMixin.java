@@ -35,10 +35,7 @@ public abstract class ElementSearchMixin {
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
                 PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
-    @Shadow @Final
-    private Map<Object, IListElement<?>> allElements;
-
-    // Pool lives in a shared WorkerPool — reused by all tiers.
+    // JEI 11.8 ElementSearch has no central allElements map — only prefixedSearchables.
 
     @Inject(method = "addAll", at = @At("HEAD"), cancellable = true)
     private void jeiopt$parallelAddAll(
@@ -47,21 +44,14 @@ public abstract class ElementSearchMixin {
 
         Config.Mode mode = Config.MODE;
         if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            // BATCH alone is already a win over per-item — hand off to the original
             return;
         }
         ci.cancel();
 
         long t0 = System.nanoTime();
+        long tAfterAll = t0;
 
-        // 1. allElements — sequential, cheap (HashMap.put × N). JEI 11.x keys by ITypedIngredient.
-        for (IListElementInfo<?> info : infos) {
-            this.allElements.put(info.getTypedIngredient(), info.getElement());
-        }
-
-        long tAfterAll = System.nanoTime();
-
-        // 2. Split: tooltip prefix stays on the calling thread (its mod-code may assume main thread).
+        // Split: tooltip prefix stays on the calling thread (its mod-code may assume main thread).
         //    Everything else fans out to the worker pool, running concurrently with tooltip work.
         List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> tooltipPrefixes = new ArrayList<>();
         List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> otherPrefixes = new ArrayList<>();

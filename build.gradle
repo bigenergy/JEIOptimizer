@@ -94,12 +94,9 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 
 dependencies {
-    // JEI — нужен для компиляции миксинов. В рантайме JEI должен быть
-    // на клиенте пользователя; этот мод его не дистрибутирует.
-    compileOnly "curse.maven:jei-238222:7420587"
-    // Для дев-клиента — подцепим тот же JEI чтобы можно было тестить миксины
-    // через ./gradlew runClient.
-    runtimeOnly "curse.maven:jei-238222:7420587"
+    // JEI 19.32+ — search classes moved from mezz.jei.core.search to mezz.jei.common.search (JEI commit 5526bb037).
+    compileOnly "curse.maven:jei-238222:8376022"
+    runtimeOnly "curse.maven:jei-238222:8376022"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

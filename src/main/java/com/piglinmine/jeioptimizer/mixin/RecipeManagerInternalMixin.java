@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.piglinmine.jeioptimizer.Config;
 import mezz.jei.api.recipe.types.IRecipeType;
 import mezz.jei.library.recipes.RecipeManagerInternal;
+import net.minecraft.util.context.ContextMap;
 import org.spongepowered.asm.mixin.Mixin;
 
 import java.util.List;
@@ -28,19 +29,17 @@ public abstract class RecipeManagerInternalMixin {
 
     @WrapMethod(method = "addRecipes")
     private <T> void jeiopt$synchronizeAddRecipes(
-            IRecipeType<T> recipeType,
-            List<T> recipes,
-            Operation<Void> original) {
+            IRecipeType<T> recipeType, List<T> recipes, ContextMap contextMap, Operation<Void> original) {
 
         // If parallelism isn't enabled — call original, zero overhead
         if (Config.PARALLEL_PHASES.isEmpty()) {
-            original.call(recipeType, recipes);
+            original.call(recipeType, recipes, contextMap);
             return;
         }
 
         // Synchronize on the instance itself — all addRecipes serialize against each other
         synchronized (this) {
-            original.call(recipeType, recipes);
+            original.call(recipeType, recipes, contextMap);
         }
     }
 }

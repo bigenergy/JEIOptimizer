@@ -7,10 +7,10 @@ import mezz.jei.api.ingredients.IIngredientHelper;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.runtime.IIngredientManager;
-import mezz.jei.core.search.ISearchStorage;
-import mezz.jei.core.search.PrefixInfo;
-import mezz.jei.core.search.PrefixedSearchable;
-import mezz.jei.core.search.SearchMode;
+import mezz.jei.api.search.ISearchStorage;
+import mezz.jei.common.search.PrefixInfo;
+import mezz.jei.common.search.PrefixedSearchable;
+import mezz.jei.common.search.SearchMode;
 import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
 import mezz.jei.gui.search.ElementSearch;
@@ -37,7 +37,7 @@ public abstract class ElementSearchMixin {
 
     @Shadow @Final
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
-                PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
+            PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
     @Shadow @Final
     private Map<Object, IListElement<?>> allElements;

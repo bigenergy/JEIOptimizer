@@ -2,9 +2,16 @@ package com.piglinmine.jeioptimizer.mixin;
 
 import com.piglinmine.jeioptimizer.Config;
 import com.piglinmine.jeioptimizer.Jeioptimizer;
+import mezz.jei.api.helpers.IColorHelper;
+import mezz.jei.api.helpers.IModIdHelper;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.runtime.IIngredientVisibility;
+import mezz.jei.api.search.ISearchStorageFactory;
+import mezz.jei.common.config.IClientConfig;
+import mezz.jei.common.config.IClientToggleState;
+import mezz.jei.common.config.IIngredientFilterConfig;
+import mezz.jei.gui.filter.IFilterTextSource;
 import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
 import mezz.jei.gui.ingredients.IngredientFilter;
@@ -17,6 +24,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -65,17 +73,7 @@ public abstract class IngredientFilterMixin {
             at = @At("HEAD")
     )
     private static void jeiopt$captureForBatch(
-            mezz.jei.gui.filter.IFilterTextSource filterTextSource,
-            mezz.jei.common.config.IClientConfig clientConfig,
-            mezz.jei.common.config.IIngredientFilterConfig config,
-            IIngredientManager ingredientManager,
-            java.util.Comparator<IListElement<?>> ingredientComparator,
-            List<IListElementInfo<?>> ingredients,
-            mezz.jei.api.helpers.IModIdHelper modIdHelper,
-            IIngredientVisibility ingredientVisibility,
-            mezz.jei.api.helpers.IColorHelper colorHelper,
-            mezz.jei.common.config.IClientToggleState clientToggleState,
-            CallbackInfo ci) {
+            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Comparator ingredientComparator, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
         if (Config.enabled()) {
             jeiopt$initCaptured.set(ingredients);
         }
@@ -98,17 +96,7 @@ public abstract class IngredientFilterMixin {
             at = @At("TAIL")
     )
     private void jeiopt$flushBatch(
-            mezz.jei.gui.filter.IFilterTextSource filterTextSource,
-            mezz.jei.common.config.IClientConfig clientConfig,
-            mezz.jei.common.config.IIngredientFilterConfig config,
-            IIngredientManager ingredientManager,
-            java.util.Comparator<IListElement<?>> ingredientComparator,
-            List<IListElementInfo<?>> ingredients,
-            mezz.jei.api.helpers.IModIdHelper modIdHelper,
-            IIngredientVisibility ingredientVisibility,
-            mezz.jei.api.helpers.IColorHelper colorHelper,
-            mezz.jei.common.config.IClientToggleState clientToggleState,
-            CallbackInfo ci) {
+            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Comparator ingredientComparator, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
 
         List<IListElementInfo<?>> batch = jeiopt$initCaptured.get();
         if (batch == null) return;

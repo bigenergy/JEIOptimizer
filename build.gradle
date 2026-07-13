@@ -95,8 +95,8 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 dependencies {
     // JEI 19.32+ — search classes moved from mezz.jei.core.search to mezz.jei.common.search (JEI commit 5526bb037).
-    compileOnly "curse.maven:jei-238222:8376022"
-    runtimeOnly "curse.maven:jei-238222:8376022"
+    compileOnly "curse.maven:jei-238222:8419197"
+    runtimeOnly "curse.maven:jei-238222:8419197"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

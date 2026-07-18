@@ -88,7 +88,7 @@ public abstract class ItemStackListFactoryMixin {
 
         IJeiClientConfigs configs = Internal.getJeiClientConfigs();
         IClientConfig clientConfig = configs.getClientConfig();
-        boolean showHidden = clientConfig.getShowHiddenIngredients();
+        boolean showHidden = clientConfig.showHiddenIngredients().getValue();
 
         Minecraft minecraft = Minecraft.getInstance();
         FeatureFlagSet features = Optional.ofNullable(minecraft.player)

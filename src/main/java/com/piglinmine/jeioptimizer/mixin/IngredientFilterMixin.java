@@ -24,8 +24,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Redirects the loop in the {@code IngredientFilter} constructor
@@ -73,7 +73,7 @@ public abstract class IngredientFilterMixin {
             at = @At("HEAD")
     )
     private static void jeiopt$captureForBatch(
-            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Comparator ingredientComparator, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
+            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Function sortIndexUpdater, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
         if (Config.enabled()) {
             jeiopt$initCaptured.set(ingredients);
         }
@@ -96,7 +96,7 @@ public abstract class IngredientFilterMixin {
             at = @At("TAIL")
     )
     private void jeiopt$flushBatch(
-            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Comparator ingredientComparator, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
+            IFilterTextSource filterTextSource, IClientConfig clientConfig, IIngredientFilterConfig config, IIngredientManager ingredientManager, Function sortIndexUpdater, List ingredients, IModIdHelper modIdHelper, IIngredientVisibility ingredientVisibility, IColorHelper colorHelper, ISearchStorageFactory searchStorageFactory, IClientToggleState clientToggleState, CallbackInfo ci) {
 
         List<IListElementInfo<?>> batch = jeiopt$initCaptured.get();
         if (batch == null) return;

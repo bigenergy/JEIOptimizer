@@ -3,16 +3,15 @@ package com.piglinmine.jeioptimizer.mixin;
 import com.piglinmine.jeioptimizer.Config;
 import com.piglinmine.jeioptimizer.Jeioptimizer;
 import com.piglinmine.jeioptimizer.WorkerPool;
-import mezz.jei.api.ingredients.IIngredientHelper;
-import mezz.jei.api.ingredients.ITypedIngredient;
-import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.runtime.IIngredientManager;
-import mezz.jei.api.search.ISearchStorage;
+import mezz.jei.api.search.ISearchStorageBuilder;
+import mezz.jei.common.search.CombinedSearchables;
 import mezz.jei.common.search.PrefixInfo;
 import mezz.jei.common.search.PrefixedSearchable;
 import mezz.jei.common.search.SearchMode;
 import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
+import mezz.jei.gui.search.ElementPrefixParser;
 import mezz.jei.gui.search.ElementSearch;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,6 +19,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.AbstractMap;
@@ -27,65 +27,83 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinTask;
-import java.util.stream.Collectors;
 
-/** Parallel {@link ElementSearch#addAll}: each prefix owns its own storage, so we fan out across them. */
+/**
+ * JEI 30.x builds every prefix storage inside the {@link ElementSearch} constructor.
+ * Each prefix owns an independent {@link ISearchStorageBuilder}, so we skip the vanilla
+ * loop and rebuild it across the worker pool instead.
+ */
 @Mixin(value = ElementSearch.class, remap = false)
 public abstract class ElementSearchMixin {
+
+    @Unique
+    private static final char JEIOPT$TOOLTIP_PREFIX = '#';
 
     @Shadow @Final
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
             PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
     @Shadow @Final
-    private Map<Object, IListElement<?>> allElements;
+    private CombinedSearchables<IListElement<?>> combinedSearchables;
 
-    // Pool lives in a shared WorkerPool — reused by all tiers.
+    @Unique
+    private boolean jeiopt$hijacked;
 
-    @Inject(method = "addAll", at = @At("HEAD"), cancellable = true)
-    private void jeiopt$parallelAddAll(
+    /**
+     * Feed the vanilla per-prefix loop an empty collection so it does nothing;
+     * we rebuild it in {@link #jeiopt$parallelBuild}. The cheap allElements loop above it
+     * is untouched.
+     */
+    @Redirect(
+            method = "<init>",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lmezz/jei/gui/search/ElementPrefixParser;allPrefixInfos()Ljava/util/Collection;"
+            )
+    )
+    private Collection<PrefixInfo<IListElementInfo<?>, IListElement<?>>> jeiopt$skipVanillaLoop(
+            ElementPrefixParser parser) {
+        Config.Mode mode = Config.MODE;
+        if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
+            return parser.allPrefixInfos();
+        }
+        this.jeiopt$hijacked = true;
+        return List.of();
+    }
+
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void jeiopt$parallelBuild(
+            ElementPrefixParser parser,
             Collection<IListElementInfo<?>> infos,
             IIngredientManager ingredientManager,
             CallbackInfo ci) {
 
-        Config.Mode mode = Config.MODE;
-        if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            // BATCH alone is already a win over per-item — hand off to the original
-            return;
-        }
-        ci.cancel();
+        if (!this.jeiopt$hijacked) return;
 
+        Config.Mode mode = Config.MODE;
         long t0 = System.nanoTime();
 
-        // 1. allElements — sequential, cheap (HashMap.put × N).
-        for (IListElementInfo<?> info : infos) {
-            Object uid = jeiopt$uid(info.getTypedIngredient(), ingredientManager);
-            this.allElements.put(uid, info.getElement());
+        // Tooltip prefix fires ItemTooltipEvent -> arbitrary mod code that may need the main thread.
+        List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> all = new ArrayList<>(parser.allPrefixInfos());
+        List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> tooltip = new ArrayList<>();
+        List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> other = new ArrayList<>();
+        for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : all) {
+            (info.getPrefix() == JEIOPT$TOOLTIP_PREFIX ? tooltip : other).add(info);
         }
 
-        long tAfterAll = System.nanoTime();
-
-        // 2. Split: tooltip prefix stays on the calling thread (its mod-code may assume main thread).
-        //    Everything else fans out to the worker pool, running concurrently with tooltip work.
-        List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> tooltipPrefixes = new ArrayList<>();
-        List<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> otherPrefixes = new ArrayList<>();
-        for (Map.Entry<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
-                       PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> e
-                : this.prefixedSearchables.entrySet()) {
-            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p = e.getValue();
-            if (p.getMode() == SearchMode.DISABLED) continue;
-            (jeiopt$isTooltipPrefix(e.getKey(), p) ? tooltipPrefixes : otherPrefixes).add(p);
-        }
-        int prefixCount = tooltipPrefixes.size() + otherPrefixes.size();
+        Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
+                PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> built = new ConcurrentHashMap<>();
 
         ForkJoinTask<?> bg = WorkerPool.get().submit(() ->
-                otherPrefixes.parallelStream().forEach(p -> jeiopt$fillPrefix(p, infos, mode))
+                other.parallelStream().forEach(info -> built.put(info, jeiopt$buildPrefix(info, infos, mode)))
         );
 
-        for (PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p : tooltipPrefixes) {
-            jeiopt$fillPrefix(p, infos, Config.Mode.PARALLEL_PREFIX);
+        // Tooltip prefix runs on the calling thread, concurrently with the pool.
+        for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : tooltip) {
+            built.put(info, jeiopt$buildPrefix(info, infos, Config.Mode.PARALLEL_PREFIX));
         }
 
         try {
@@ -94,127 +112,80 @@ public abstract class ElementSearchMixin {
             Thread.currentThread().interrupt();
             throw new RuntimeException("JEIOptimizer interrupted during filter build", ie);
         } catch (ExecutionException ee) {
-            Jeioptimizer.LOGGER.error("[JEIOptimizer] Parallel addAll failed — falling back to sequential", ee.getCause());
-            jeiopt$sequentialFallback(infos, otherPrefixes);
+            Jeioptimizer.LOGGER.error(
+                    "[JEIOptimizer] Parallel prefix build failed — rebuilding those prefixes sequentially",
+                    ee.getCause());
+        }
+
+        // Insert in the parser's own order so search behaviour matches vanilla.
+        for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : all) {
+            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> searchable = built.get(info);
+            if (searchable == null) {
+                searchable = jeiopt$buildPrefix(info, infos, Config.Mode.PARALLEL_PREFIX);
+            }
+            this.prefixedSearchables.put(info, searchable);
+            this.combinedSearchables.addSearchable(searchable);
         }
 
         if (Config.LOG_TIMING_ENABLED) {
-            long now = System.nanoTime();
             Jeioptimizer.LOGGER.info(
-                    "[JEIOptimizer] addAll done — {} infos × {} prefixes in {} ms (allElements: {} ms, parallel build: {} ms, mode={})",
-                    infos.size(),
-                    prefixCount,
-                    (now - t0) / 1_000_000,
-                    (tAfterAll - t0) / 1_000_000,
-                    (now - tAfterAll) / 1_000_000,
-                    mode
-            );
+                    "[JEIOptimizer] ElementSearch built — {} infos × {} prefixes in {} ms (mode={})",
+                    infos.size(), all.size(), (System.nanoTime() - t0) / 1_000_000, mode);
         }
     }
 
     @Unique
-    private static void jeiopt$fillPrefix(
-            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> prefix,
+    private static PrefixedSearchable<IListElementInfo<?>, IListElement<?>> jeiopt$buildPrefix(
+            PrefixInfo<IListElementInfo<?>, IListElement<?>> prefixInfo,
             Collection<IListElementInfo<?>> infos,
             Config.Mode mode) {
 
-        ISearchStorage<IListElement<?>> storage = prefix.getSearchStorage();
+        ISearchStorageBuilder<IListElement<?>> builder = prefixInfo.createStorageBuilder();
 
-        if (mode == Config.Mode.PARALLEL_FULL) {
-            // Tokenize in parallel; storage.put stays sequential (suffix tree is not thread-safe).
-            List<Map.Entry<IListElement<?>, Collection<String>>> tokens = infos.parallelStream()
-                    .map(info -> new AbstractMap.SimpleEntry<IListElement<?>, Collection<String>>(
-                            info.getElement(), jeiopt$safeGetStrings(prefix, info)))
-                    .collect(Collectors.toList());
-            for (Map.Entry<IListElement<?>, Collection<String>> e : tokens) {
-                IListElement<?> el = e.getKey();
-                for (String s : e.getValue()) storage.put(s, el);
+        if (prefixInfo.getMode() != SearchMode.DISABLED) {
+            if (mode == Config.Mode.PARALLEL_FULL) {
+                // Tokenize in parallel; builder.put stays sequential (storage is not thread-safe).
+                List<Map.Entry<IListElement<?>, Collection<String>>> tokens = infos.parallelStream()
+                        .<Map.Entry<IListElement<?>, Collection<String>>>map(info -> new AbstractMap.SimpleEntry<>(
+                                info.getElement(), jeiopt$safeGetStrings(prefixInfo, info)))
+                        .toList();
+                for (Map.Entry<IListElement<?>, Collection<String>> e : tokens) {
+                    for (String s : e.getValue()) jeiopt$putIfNotBlank(builder, s, e.getKey());
+                }
+            } else {
+                for (IListElementInfo<?> info : infos) {
+                    IListElement<?> element = info.getElement();
+                    for (String s : jeiopt$safeGetStrings(prefixInfo, info)) {
+                        jeiopt$putIfNotBlank(builder, s, element);
+                    }
+                }
             }
-            return;
         }
 
-        for (IListElementInfo<?> info : infos) {
-            Collection<String> strings = jeiopt$safeGetStrings(prefix, info);
-            IListElement<?> el = info.getElement();
-            for (String s : strings) storage.put(s, el);
+        return new PrefixedSearchable<>(builder.build(), prefixInfo);
+    }
+
+    @Unique
+    private static void jeiopt$putIfNotBlank(
+            ISearchStorageBuilder<IListElement<?>> builder, String string, IListElement<?> element) {
+        String trimmed = string.trim();
+        if (!trimmed.isEmpty()) {
+            builder.put(trimmed, element);
         }
     }
 
     @Unique
     private static Collection<String> jeiopt$safeGetStrings(
-            PrefixedSearchable<IListElementInfo<?>, IListElement<?>> prefix,
+            PrefixInfo<IListElementInfo<?>, IListElement<?>> prefixInfo,
             IListElementInfo<?> info) {
         try {
-            return prefix.getStrings(info);
+            return prefixInfo.getStrings(info);
         } catch (Throwable t) {
             if (Config.LOG_TIMING_ENABLED) {
                 Jeioptimizer.LOGGER.debug(
-                        "[JEIOptimizer] prefix.getStrings threw — skipping ingredient. error={}", t.toString());
+                        "[JEIOptimizer] prefixInfo.getStrings threw — skipping ingredient. error={}", t.toString());
             }
-            return java.util.Collections.emptyList();
+            return List.of();
         }
-    }
-
-    @Unique
-    private static final java.util.concurrent.atomic.AtomicBoolean jeiopt$prefixesLogged =
-            new java.util.concurrent.atomic.AtomicBoolean();
-
-    /**
-     * JEI tags each prefix with a single char ('#' tooltip, '@' modId, '$' tag, ...).
-     * We use that as the source of truth and fall back to class-name only if reflection fails.
-     */
-    @Unique
-    private static boolean jeiopt$isTooltipPrefix(PrefixInfo<?, ?> info, PrefixedSearchable<?, ?> prefix) {
-        Character ch = jeiopt$prefixChar(info);
-        if (Config.LOG_TIMING_ENABLED && jeiopt$prefixesLogged.compareAndSet(false, true)) {
-            Jeioptimizer.LOGGER.info(
-                    "[JEIOptimizer] prefix detected: char={}, infoClass={}, prefixClass={}",
-                    ch, info.getClass().getName(), prefix.getClass().getName());
-        }
-        if (ch != null) return ch == '#';
-
-        String cls = info.getClass().getName() + "|" + prefix.getClass().getName();
-        return cls.toLowerCase(java.util.Locale.ROOT).contains("tooltip");
-    }
-
-    @Unique
-    private static Character jeiopt$prefixChar(PrefixInfo<?, ?> info) {
-        try {
-            java.lang.reflect.Method m = info.getClass().getMethod("getPrefix");
-            Object r = m.invoke(info);
-            if (r instanceof Character) return (Character) r;
-        } catch (Throwable ignored) {}
-        try {
-            for (java.lang.reflect.Field f : info.getClass().getDeclaredFields()) {
-                if (f.getType() == char.class || f.getType() == Character.class) {
-                    f.setAccessible(true);
-                    Object v = f.get(info);
-                    if (v instanceof Character) return (Character) v;
-                }
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
-
-    @Unique
-    private void jeiopt$sequentialFallback(
-            Collection<IListElementInfo<?>> infos,
-            Collection<PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixes) {
-        for (PrefixedSearchable<IListElementInfo<?>, IListElement<?>> p : prefixes) {
-            if (p.getMode() == SearchMode.DISABLED) continue;
-            ISearchStorage<IListElement<?>> storage = p.getSearchStorage();
-            for (IListElementInfo<?> info : infos) {
-                Collection<String> strings = jeiopt$safeGetStrings(p, info);
-                IListElement<?> el = info.getElement();
-                for (String s : strings) storage.put(s, el);
-            }
-        }
-    }
-
-    @Unique
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Object jeiopt$uid(ITypedIngredient<?> typed, IIngredientManager mgr) {
-        IIngredientHelper helper = mgr.getIngredientHelper(typed.getType());
-        return helper.getUid(typed.getIngredient(), UidContext.Ingredient);
     }
 }

@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * JEIOptimizer config.
  *
  * <h3>Tier 1 — filter build (shipping since v1.0)</h3>
- * {@link Mode} — parallel {@code ElementSearch.addAll}. Default PARALLEL_PREFIX.
+ * {@link Mode} — parallel {@code ElementSearch} constructor. Default PARALLEL_FULL.
  *
  * <h3>Tier A — Parallel Plugin Registration (v1.1)</h3>
  * {@code parallel_plugin_phases} — list of PluginCaller.callOnPlugins phases
@@ -24,12 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code parallel_creative_tabs} — parallel build of CreativeModeTabs inside
  * VanillaPlugin.registerIngredients. Enabled by default. Big win (~3 sec)
  * but risk depends on how thread-safe the mod tabs are.
- *
- * <h3>Tier C — Async Filter Build (v1.1)</h3>
- * {@code async_filter_build} — IngredientFilter is built in the background after
- * the constructor. The player enters the world immediately, JEI search becomes
- * usable a couple of seconds later. Default false (psychologically weird if a
- * player opens JEI and sees nothing).
  */
 @EventBusSubscriber(modid = Jeioptimizer.MODID)
 public class Config {
@@ -82,14 +76,6 @@ public class Config {
                     "race on internal state. Default OFF (safe). Enable only if your mod set is verified.")
             .define("plugins.parallel_creative_tabs", false);
 
-    // --- Tier C: async filter build ---
-    private static final ModConfigSpec.BooleanValue ASYNC_FILTER_BUILD = BUILDER
-            .comment("Build IngredientFilter contents in background — player enters world immediately,",
-                    "JEI search becomes available 1-2 sec later. If a player opens JEI before then,",
-                    "they see an empty grid until ready. Psychologically faster, technically same.",
-                    "Default: false (disabled).")
-            .define("filter.async", false);
-
     static final ModConfigSpec SPEC = BUILDER.build();
 
     // --- Public state (read by mixins) ---
@@ -98,7 +84,6 @@ public class Config {
     public static boolean LOG_TIMING_ENABLED = true;
     public static Set<String> PARALLEL_PHASES = ConcurrentHashMap.newKeySet();
     public static boolean PARALLEL_TABS = false;
-    public static boolean ASYNC_BUILD = false;
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
@@ -109,7 +94,6 @@ public class Config {
         PARALLEL_PHASES.clear();
         PARALLEL_PHASES.addAll(PARALLEL_PLUGIN_PHASES.get().stream().map(String::valueOf).toList());
         PARALLEL_TABS = PARALLEL_CREATIVE_TABS.get();
-        ASYNC_BUILD = ASYNC_FILTER_BUILD.get();
     }
 
     public static boolean enabled() {

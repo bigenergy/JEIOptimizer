@@ -7,7 +7,6 @@
   ],
   "client": [
     "ElementSearchMixin",
-    "IngredientFilterMixin",
     "ItemStackListFactoryMixin",
     "PluginCallerMixin",
     "RecipeManagerInternalMixin"

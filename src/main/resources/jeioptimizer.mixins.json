@@ -8,7 +8,6 @@
   ],
   "client": [
     "ElementSearchMixin",
-    "IngredientFilterMixin",
     "ItemStackListFactoryMixin",
     "PluginCallerMixin"
   ],

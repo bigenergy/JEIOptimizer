@@ -56,12 +56,6 @@ public class Config {
                     "race on internal state. Default OFF (safe). Enable only if your mod set is verified.")
             .define("plugins.parallel_creative_tabs", false);
 
-    private static final ForgeConfigSpec.BooleanValue ASYNC_FILTER_BUILD = BUILDER
-            .comment("Build IngredientFilter contents in background — player enters world immediately,",
-                    "JEI search becomes available 1-2 sec later. If a player opens JEI before then,",
-                    "they see an empty grid until ready. Default false.")
-            .define("filter.async", false);
-
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     public static Mode MODE = Mode.PARALLEL_FULL;
@@ -69,7 +63,6 @@ public class Config {
     public static boolean LOG_TIMING_ENABLED = true;
     public static Set<String> PARALLEL_PHASES = ConcurrentHashMap.newKeySet();
     public static boolean PARALLEL_TABS = false;
-    public static boolean ASYNC_BUILD = false;
 
     public static void onLoad(final ModConfigEvent event) {
         if (event.getConfig().getSpec() != SPEC) return;
@@ -79,7 +72,6 @@ public class Config {
         PARALLEL_PHASES.clear();
         PARALLEL_PHASES.addAll(PARALLEL_PLUGIN_PHASES.get().stream().map(String::valueOf).toList());
         PARALLEL_TABS = PARALLEL_CREATIVE_TABS.get();
-        ASYNC_BUILD = ASYNC_FILTER_BUILD.get();
     }
 
     public static boolean enabled() {

@@ -69,13 +69,9 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 
-    // JEI 15.x для 1.20.1 Forge. Нужен ВЕСЬ jei-forge jar (не только API)
-    // потому что наши миксины таргетят internal классы (gui/library/common).
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
     runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
 
-    // Mixin annotation processor (mixinextras не нужен — RecipeManagerInternalMixin удалён,
-    // parallel_phases по дефолту off из-за thread-safety проблем в plugin'ах)
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 

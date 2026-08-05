@@ -9,6 +9,7 @@ import mezz.jei.common.Internal;
 import mezz.jei.common.config.IClientConfig;
 import mezz.jei.common.config.IJeiClientConfigs;
 import mezz.jei.common.util.StackHelper;
+import mezz.jei.library.plugins.vanilla.ingredients.ItemStackHelper;
 import mezz.jei.library.plugins.vanilla.ingredients.ItemStackListFactory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -35,15 +36,41 @@ import java.util.Set;
  * Tier B (1.20.1 backport): parallel build of CreativeModeTab contents inside
  * {@link ItemStackListFactory#create}.
  * <p>
- * JEI 15.x differences vs 19.x: {@code create} takes only {@code StackHelper}
- * (no {@code ItemStackHelper}); {@code clientConfig.isShowHiddenItemsEnabled()}
- * instead of {@code getShowHiddenIngredients()}.
+ * {@code create} exists in two shapes across JEI 15.x builds — with and without the
+ * trailing {@code ItemStackHelper}. Both are injected with explicit descriptors and
+ * {@code require = 0} so whichever one is absent is skipped instead of failing the mixin.
+ * The helper is unused either way; only {@code StackHelper} is needed.
  */
 @Mixin(value = ItemStackListFactory.class, remap = false)
 public abstract class ItemStackListFactoryMixin {
 
-    @Inject(method = "create", at = @At("HEAD"), cancellable = true)
+    @Inject(
+            method = "create(Lmezz/jei/common/util/StackHelper;)Ljava/util/List;",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 0
+    )
     private static void jeiopt$parallelCreate(
+            StackHelper stackHelper,
+            CallbackInfoReturnable<List<ItemStack>> cir) {
+        jeiopt$tryParallel(stackHelper, cir);
+    }
+
+    @Inject(
+            method = "create(Lmezz/jei/common/util/StackHelper;Lmezz/jei/library/plugins/vanilla/ingredients/ItemStackHelper;)Ljava/util/List;",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 0
+    )
+    private static void jeiopt$parallelCreateWithHelper(
+            StackHelper stackHelper,
+            ItemStackHelper itemStackHelper,
+            CallbackInfoReturnable<List<ItemStack>> cir) {
+        jeiopt$tryParallel(stackHelper, cir);
+    }
+
+    @Unique
+    private static void jeiopt$tryParallel(
             StackHelper stackHelper,
             CallbackInfoReturnable<List<ItemStack>> cir) {
 
@@ -70,7 +97,7 @@ public abstract class ItemStackListFactoryMixin {
     private static List<ItemStack> jeiopt$buildInParallel(StackHelper stackHelper) throws Exception {
         IJeiClientConfigs configs = Internal.getJeiClientConfigs();
         IClientConfig clientConfig = configs.getClientConfig();
-        boolean showHidden = clientConfig.isShowHiddenItemsEnabled();
+        boolean showHidden = clientConfig.getShowHiddenIngredients();
 
         Minecraft minecraft = Minecraft.getInstance();
         FeatureFlagSet features = Optional.ofNullable(minecraft.player)

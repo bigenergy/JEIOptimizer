@@ -26,6 +26,7 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -39,8 +40,9 @@ import java.util.concurrent.ForkJoinTask;
 @Mixin(value = ElementSearch.class, remap = false)
 public abstract class ElementSearchMixin {
 
+    /** JEI prefix chars: '@' mod_names, '#' tags, '$' tooltips, '%' creative_tabs, '^' colors, '&' identifiers. */
     @Unique
-    private static final char JEIOPT$TOOLTIP_PREFIX = '#';
+    private static final char JEIOPT$TOOLTIP_PREFIX = '$';
 
     @Shadow @Final
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
@@ -91,7 +93,15 @@ public abstract class ElementSearchMixin {
         List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> tooltip = new ArrayList<>();
         List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> other = new ArrayList<>();
         for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : all) {
-            (info.getPrefix() == JEIOPT$TOOLTIP_PREFIX ? tooltip : other).add(info);
+            (jeiopt$isTooltipPrefix(info) ? tooltip : other).add(info);
+        }
+
+        if (tooltip.isEmpty()) {
+            Jeioptimizer.LOGGER.warn(
+                    "[JEIOptimizer] No tooltip prefix detected — mod tooltip handlers would run off-thread. "
+                            + "Building everything on the calling thread instead. Prefixes seen: {}", all);
+            tooltip.addAll(other);
+            other.clear();
         }
 
         Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
@@ -132,6 +142,18 @@ public abstract class ElementSearchMixin {
                     "[JEIOptimizer] ElementSearch built — {} infos × {} prefixes in {} ms (mode={})",
                     infos.size(), all.size(), (System.nanoTime() - t0) / 1_000_000, mode);
         }
+    }
+
+
+    /**
+     * Tooltip prefix must not run on a worker: it fires ItemTooltipEvent, and mod handlers
+     * there touch main-thread-only state (ThreadLocalRandom, level state, textures).
+     */
+    @Unique
+    private static boolean jeiopt$isTooltipPrefix(PrefixInfo<?, ?> info) {
+        if (info.getPrefix() == JEIOPT$TOOLTIP_PREFIX) return true;
+        // PrefixInfo.toString() is "PrefixInfo{<id>}" — survives a prefix char change.
+        return String.valueOf(info).toLowerCase(Locale.ROOT).contains("tooltip");
     }
 
     @Unique

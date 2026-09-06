@@ -92,8 +92,8 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 
 dependencies {
-    compileOnly "curse.maven:jei-238222:8527020"
-    runtimeOnly "curse.maven:jei-238222:8527020"
+    compileOnly "curse.maven:jei-238222:8815666"
+    runtimeOnly "curse.maven:jei-238222:8815666"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

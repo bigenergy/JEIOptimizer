@@ -22,14 +22,15 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinTask;
+import java.util.stream.IntStream;
 
 /**
  * JEI 30.x builds every prefix storage inside the {@link ElementSearch} constructor.
@@ -39,8 +40,9 @@ import java.util.concurrent.ForkJoinTask;
 @Mixin(value = ElementSearch.class, remap = false)
 public abstract class ElementSearchMixin {
 
+    /** JEI prefix chars: '@' mod_names, '#' tags, '$' tooltips, '%' creative_tabs, '^' colors, '&' identifiers. */
     @Unique
-    private static final char JEIOPT$TOOLTIP_PREFIX = '#';
+    private static final char JEIOPT$TOOLTIP_PREFIX = '$';
 
     @Shadow @Final
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
@@ -91,19 +93,37 @@ public abstract class ElementSearchMixin {
         List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> tooltip = new ArrayList<>();
         List<PrefixInfo<IListElementInfo<?>, IListElement<?>>> other = new ArrayList<>();
         for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : all) {
-            (info.getPrefix() == JEIOPT$TOOLTIP_PREFIX ? tooltip : other).add(info);
+            (jeiopt$isTooltipPrefix(info) ? tooltip : other).add(info);
         }
+
+        if (tooltip.isEmpty()) {
+            Jeioptimizer.LOGGER.warn(
+                    "[JEIOptimizer] No tooltip prefix detected — mod tooltip handlers would run off-thread. "
+                            + "Building everything on the calling thread instead. Prefixes seen: {}", all);
+            tooltip.addAll(other);
+            other.clear();
+        }
+
+        // Materialise once for every prefix: each build needs indexed access, and
+        // re-copying the collection per prefix is pure waste.
+        IListElementInfo<?>[] infoArray = infos.toArray(new IListElementInfo<?>[0]);
+
+        // Splitting inside a prefix only pays off while prefixes alone can't saturate the
+        // pool. With enough prefixes the outer level already fills every worker, and the
+        // inner split just adds fork/join overhead and a temporary array per prefix.
+        boolean nested = mode == Config.Mode.PARALLEL_FULL
+                && other.size() < Config.effectiveWorkers();
 
         Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
                 PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> built = new ConcurrentHashMap<>();
 
         ForkJoinTask<?> bg = WorkerPool.get().submit(() ->
-                other.parallelStream().forEach(info -> built.put(info, jeiopt$buildPrefix(info, infos, mode)))
+                other.parallelStream().forEach(info -> built.put(info, jeiopt$buildPrefix(info, infoArray, nested)))
         );
 
         // Tooltip prefix runs on the calling thread, concurrently with the pool.
         for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : tooltip) {
-            built.put(info, jeiopt$buildPrefix(info, infos, Config.Mode.PARALLEL_PREFIX));
+            built.put(info, jeiopt$buildPrefix(info, infoArray, false));
         }
 
         try {
@@ -121,7 +141,7 @@ public abstract class ElementSearchMixin {
         for (PrefixInfo<IListElementInfo<?>, IListElement<?>> info : all) {
             PrefixedSearchable<IListElementInfo<?>, IListElement<?>> searchable = built.get(info);
             if (searchable == null) {
-                searchable = jeiopt$buildPrefix(info, infos, Config.Mode.PARALLEL_PREFIX);
+                searchable = jeiopt$buildPrefix(info, infoArray, false);
             }
             this.prefixedSearchables.put(info, searchable);
             this.combinedSearchables.addSearchable(searchable);
@@ -134,23 +154,37 @@ public abstract class ElementSearchMixin {
         }
     }
 
+
+    /**
+     * Tooltip prefix must not run on a worker: it fires ItemTooltipEvent, and mod handlers
+     * there touch main-thread-only state (ThreadLocalRandom, level state, textures).
+     */
     @Unique
+    private static boolean jeiopt$isTooltipPrefix(PrefixInfo<?, ?> info) {
+        if (info.getPrefix() == JEIOPT$TOOLTIP_PREFIX) return true;
+        // PrefixInfo.toString() is "PrefixInfo{<id>}" — survives a prefix char change.
+        return String.valueOf(info).toLowerCase(Locale.ROOT).contains("tooltip");
+    }
+
+    @Unique
+    @SuppressWarnings("unchecked")
     private static PrefixedSearchable<IListElementInfo<?>, IListElement<?>> jeiopt$buildPrefix(
             PrefixInfo<IListElementInfo<?>, IListElement<?>> prefixInfo,
-            Collection<IListElementInfo<?>> infos,
-            Config.Mode mode) {
+            IListElementInfo<?>[] infos,
+            boolean nestedParallel) {
 
         ISearchStorageBuilder<IListElement<?>> builder = prefixInfo.createStorageBuilder();
 
         if (prefixInfo.getMode() != SearchMode.DISABLED) {
-            if (mode == Config.Mode.PARALLEL_FULL) {
-                // Tokenize in parallel; builder.put stays sequential (storage is not thread-safe).
-                List<Map.Entry<IListElement<?>, Collection<String>>> tokens = infos.parallelStream()
-                        .<Map.Entry<IListElement<?>, Collection<String>>>map(info -> new AbstractMap.SimpleEntry<>(
-                                info.getElement(), jeiopt$safeGetStrings(prefixInfo, info)))
-                        .toList();
-                for (Map.Entry<IListElement<?>, Collection<String>> e : tokens) {
-                    for (String s : e.getValue()) jeiopt$putIfNotBlank(builder, s, e.getKey());
+            if (nestedParallel) {
+                // Tokenize in parallel into a flat array; builder.put stays sequential
+                // (storage is not thread-safe). One array beats one boxed entry per element.
+                Collection<String>[] tokens = new Collection[infos.length];
+                IntStream.range(0, infos.length).parallel()
+                        .forEach(i -> tokens[i] = jeiopt$safeGetStrings(prefixInfo, infos[i]));
+                for (int i = 0; i < infos.length; i++) {
+                    IListElement<?> element = infos[i].getElement();
+                    for (String s : tokens[i]) jeiopt$putIfNotBlank(builder, s, element);
                 }
             } else {
                 for (IListElementInfo<?> info : infos) {

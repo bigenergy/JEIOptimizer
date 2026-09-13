@@ -76,6 +76,30 @@ public class Config {
                     "race on internal state. Default OFF (safe). Enable only if your mod set is verified.")
             .define("plugins.parallel_creative_tabs", false);
 
+    // --- Tier D: JEI's synthetic anvil/grindstone recipes ---
+    private static final ModConfigSpec.BooleanValue SKIP_ENCHANTMENT_RECIPES = BUILDER
+            .comment("Skip JEI's generated book-enchanting (anvil) and disenchanting (grindstone) entries.",
+                    "JEI builds one entry per enchantable item x enchantment x level, so the count",
+                    "explodes on packs with many enchantments.",
+                    "TRADE-OFF: those entries disappear from JEI. Real recipes are untouched.",
+                    "Default: false.")
+            .define("recipes.skip_generated_enchantment_recipes", false);
+
+    private static final ModConfigSpec.BooleanValue SKIP_REPAIR_RECIPES = BUILDER
+            .comment("Skip JEI's generated anvil and grindstone REPAIR entries.",
+                    "The grindstone half walks every damageable item in the pack.",
+                    "TRADE-OFF: those entries disappear from JEI. Real recipes are untouched.",
+                    "Default: false.")
+            .define("recipes.skip_generated_repair_recipes", false);
+
+    private static final ModConfigSpec.BooleanValue SKIP_REDUNDANT_MENU_UPDATES_VALUE = BUILDER
+            .comment("JEI builds its anvil and grindstone entries by driving a hidden menu once per",
+                    "combination. Writing each input slot triggers a full recipe recalculation, and",
+                    "only the last one can see both inputs. Skip the redundant ones and recalculate",
+                    "once, after both slots are set.",
+                    "Transparent: the values JEI reads are identical. Default: true.")
+            .define("recipes.skip_redundant_menu_updates", true);
+
     static final ModConfigSpec SPEC = BUILDER.build();
 
     // --- Public state (read by mixins) ---
@@ -84,6 +108,9 @@ public class Config {
     public static boolean LOG_TIMING_ENABLED = true;
     public static Set<String> PARALLEL_PHASES = ConcurrentHashMap.newKeySet();
     public static boolean PARALLEL_TABS = false;
+    public static boolean SKIP_ENCHANT_RECIPES = false;
+    public static boolean SKIP_REPAIR = false;
+    public static boolean SKIP_REDUNDANT_MENU_UPDATES = true;
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
@@ -94,6 +121,9 @@ public class Config {
         PARALLEL_PHASES.clear();
         PARALLEL_PHASES.addAll(PARALLEL_PLUGIN_PHASES.get().stream().map(String::valueOf).toList());
         PARALLEL_TABS = PARALLEL_CREATIVE_TABS.get();
+        SKIP_ENCHANT_RECIPES = SKIP_ENCHANTMENT_RECIPES.get();
+        SKIP_REPAIR = SKIP_REPAIR_RECIPES.get();
+        SKIP_REDUNDANT_MENU_UPDATES = SKIP_REDUNDANT_MENU_UPDATES_VALUE.get();
     }
 
     public static boolean enabled() {

@@ -71,9 +71,9 @@ public class Config {
     // EXPERIMENTAL: many mods' CreativeModeTab.buildContents() is not thread-safe (shared mod state,
     // lazy caches, etc). In our test 22% of JEI items were lost in parallel mode. Default OFF.
     private static final ModConfigSpec.BooleanValue PARALLEL_CREATIVE_TABS = BUILDER
-            .comment("EXPERIMENTAL. Build CreativeModeTab contents in parallel.",
-                    "In our test pack this LOST 22% of JEI items because some mods' tab builders",
-                    "race on internal state. Default OFF (safe). Enable only if your mod set is verified.")
+            .comment("NOT SUPPORTED on this JEI version — has no effect.",
+                    "JEI now also adds items that no creative tab lists, straight from the registries,",
+                    "so a parallel walk over the tabs would drop them. Kept so existing configs load.")
             .define("plugins.parallel_creative_tabs", false);
 
     // --- Tier D: JEI's synthetic anvil/grindstone recipes ---
@@ -121,6 +121,9 @@ public class Config {
         PARALLEL_PHASES.clear();
         PARALLEL_PHASES.addAll(PARALLEL_PLUGIN_PHASES.get().stream().map(String::valueOf).toList());
         PARALLEL_TABS = PARALLEL_CREATIVE_TABS.get();
+        if (PARALLEL_TABS) {
+            Jeioptimizer.LOGGER.warn("[JEIOptimizer] plugins.parallel_creative_tabs has no effect on this JEI version.");
+        }
         SKIP_ENCHANT_RECIPES = SKIP_ENCHANTMENT_RECIPES.get();
         SKIP_REPAIR = SKIP_REPAIR_RECIPES.get();
         SKIP_REDUNDANT_MENU_UPDATES = SKIP_REDUNDANT_MENU_UPDATES_VALUE.get();

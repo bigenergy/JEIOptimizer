@@ -19,6 +19,7 @@ sourceSets.main.resources {
 
 repositories {
     maven { url "https://maven.blamejared.com" }
+    maven { url "https://cursemaven.com" }
 }
 
 base {
@@ -74,6 +75,9 @@ dependencies {
     // Mixins target internal JEI classes, so we need the full neoforge jar at compile, not just the API.
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+
+    // JEI config values are MezzConfig's IConfigValue, so its api has to be on the compile path.
+    implementation "curse.maven:mezzconfig-1689768:8932695"
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

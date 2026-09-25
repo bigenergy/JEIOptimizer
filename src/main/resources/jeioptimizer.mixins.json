@@ -4,10 +4,15 @@
   "package": "com.piglinmine.jeioptimizer.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "GrindstoneMenuMixin",
+    "ItemCombinerMenuMixin"
   ],
   "client": [
+    "AnvilHelperMixin",
+    "AnvilRecipeMakerMixin",
     "ElementSearchMixin",
-    "ItemStackListFactoryMixin",
+    "GrindstoneRecipeMakerMixin",
+    "GrindstoneResultMixin",
     "PluginCallerMixin",
     "RecipeManagerInternalMixin"
   ],

@@ -13,7 +13,6 @@
     "ElementSearchMixin",
     "GrindstoneRecipeMakerMixin",
     "GrindstoneResultMixin",
-    "ItemStackListFactoryMixin",
     "PluginCallerMixin",
     "RecipeManagerInternalMixin"
   ],

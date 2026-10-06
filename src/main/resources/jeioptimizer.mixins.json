@@ -14,7 +14,6 @@
     "ElementSearchMixin",
     "GrindstoneRecipeMakerMixin",
     "GrindstoneResultMixin",
-    "ItemStackListFactoryMixin",
     "PluginCallerMixin"
   ],
   "injectors": {

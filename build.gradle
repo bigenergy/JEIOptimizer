@@ -63,6 +63,9 @@ repositories {
         // JEI's own Maven
         url "https://maven.blamejared.com"
     }
+    maven {
+        url "https://cursemaven.com"
+    }
     mavenCentral()
 }
 
@@ -71,6 +74,9 @@ dependencies {
 
     compileOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
     runtimeOnly fg.deobf("mezz.jei:jei-${minecraft_version}-forge:${jei_version}")
+
+    // JEI config values are MezzConfig's IConfigValue, so its api has to be on the compile path.
+    implementation fg.deobf("curse.maven:mezzconfig-1689768:9048661")
 
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }

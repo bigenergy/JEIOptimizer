@@ -92,10 +92,10 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 
 dependencies {
-    compileOnly "curse.maven:jei-238222:8870333"
-    runtimeOnly "curse.maven:jei-238222:8870333"
-    compileOnly "curse.maven:mezzconfig-1689768:8870589"
-    runtimeOnly "curse.maven:mezzconfig-1689768:8870589"
+    compileOnly "curse.maven:jei-238222:9205121"
+    runtimeOnly "curse.maven:jei-238222:9205121"
+    compileOnly "curse.maven:mezzconfig-1689768:9048666"
+    runtimeOnly "curse.maven:mezzconfig-1689768:9048666"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

@@ -6,13 +6,13 @@ import com.piglinmine.jeioptimizer.WorkerPool;
 import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.search.ISearchStorageBuilder;
 import mezz.jei.common.config.SearchMode;
-import mezz.jei.common.search.CombinedSearchables;
 import mezz.jei.common.search.PrefixInfo;
 import mezz.jei.common.search.PrefixedSearchable;
 import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
 import mezz.jei.gui.search.ElementPrefixParser;
 import mezz.jei.gui.search.ElementSearch;
+import mezz.jei.gui.search.ElementSearchIndex;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -48,32 +48,39 @@ public abstract class ElementSearchMixin {
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
             PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
-    @Shadow @Final
-    private CombinedSearchables<IListElement<?>> combinedSearchables;
-
     @Unique
     private boolean jeiopt$hijacked;
 
+    @Shadow
+    private void rebuildSearchIndex(ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
+        throw new AssertionError();
+    }
+
+    @Shadow
+    private void updateCombinedSearchables() {
+        throw new AssertionError();
+    }
+
     /**
-     * Feed the vanilla per-prefix loop an empty collection so it does nothing;
-     * we rebuild it in {@link #jeiopt$parallelBuild}. The cheap allElements loop above it
-     * is untouched.
+     * Skip the vanilla per-index {@code rebuildSearchIndex} calls in the constructor;
+     * we rebuild them in {@link #jeiopt$parallelBuild}. The cheap allElements loop above
+     * and the trailing {@code updateCombinedSearchables()} are untouched.
      */
     @Redirect(
             method = "<init>",
             at = @At(
                     value = "INVOKE",
-                    target = "Lmezz/jei/gui/search/ElementPrefixParser;allPrefixInfos()Ljava/util/Collection;"
+                    target = "Lmezz/jei/gui/search/ElementSearch;rebuildSearchIndex(Lmezz/jei/gui/search/ElementSearchIndex;Ljava/util/Collection;)V"
             )
     )
-    private Collection<PrefixInfo<IListElementInfo<?>, IListElement<?>>> jeiopt$skipVanillaLoop(
-            ElementPrefixParser parser) {
+    private void jeiopt$skipVanillaLoop(
+            ElementSearch self, ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
         Config.Mode mode = Config.MODE;
         if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            return parser.allPrefixInfos();
+            this.rebuildSearchIndex(index, infos);
+            return;
         }
         this.jeiopt$hijacked = true;
-        return List.of();
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))
@@ -144,8 +151,9 @@ public abstract class ElementSearchMixin {
                 searchable = jeiopt$buildPrefix(info, infoArray, false);
             }
             this.prefixedSearchables.put(info, searchable);
-            this.combinedSearchables.addSearchable(searchable);
         }
+        // The constructor's own updateCombinedSearchables() ran against an empty map.
+        this.updateCombinedSearchables();
 
         if (Config.LOG_TIMING_ENABLED) {
             Jeioptimizer.LOGGER.info(

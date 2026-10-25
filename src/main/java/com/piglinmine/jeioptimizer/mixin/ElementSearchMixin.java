@@ -13,6 +13,7 @@ import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
 import mezz.jei.gui.search.ElementPrefixParser;
 import mezz.jei.gui.search.ElementSearch;
+import mezz.jei.gui.search.ElementSearchIndex;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -54,6 +55,16 @@ public abstract class ElementSearchMixin {
     @Unique
     private boolean jeiopt$hijacked;
 
+    @Shadow
+    private void rebuildSearchIndex(ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
+        throw new AssertionError();
+    }
+
+    @Shadow
+    private void updateCombinedSearchables() {
+        throw new AssertionError();
+    }
+
     /**
      * Feed the vanilla per-prefix loop an empty collection so it does nothing;
      * we rebuild it in {@link #jeiopt$parallelBuild}. The cheap allElements loop above it
@@ -63,17 +74,17 @@ public abstract class ElementSearchMixin {
             method = "<init>",
             at = @At(
                     value = "INVOKE",
-                    target = "Lmezz/jei/gui/search/ElementPrefixParser;allPrefixInfos()Ljava/util/Collection;"
+                    target = "Lmezz/jei/gui/search/ElementSearch;rebuildSearchIndex(Lmezz/jei/gui/search/ElementSearchIndex;Ljava/util/Collection;)V"
             )
     )
-    private Collection<PrefixInfo<IListElementInfo<?>, IListElement<?>>> jeiopt$skipVanillaLoop(
-            ElementPrefixParser parser) {
+    private void jeiopt$skipVanillaLoop(
+            ElementSearch self, ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
         Config.Mode mode = Config.MODE;
         if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            return parser.allPrefixInfos();
+            this.rebuildSearchIndex(index, infos);
+            return;
         }
         this.jeiopt$hijacked = true;
-        return List.of();
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))
@@ -144,7 +155,7 @@ public abstract class ElementSearchMixin {
                 searchable = jeiopt$buildPrefix(info, infoArray, false);
             }
             this.prefixedSearchables.put(info, searchable);
-            this.combinedSearchables.addSearchable(searchable);
+            this.updateCombinedSearchables();
         }
 
         if (Config.LOG_TIMING_ENABLED) {

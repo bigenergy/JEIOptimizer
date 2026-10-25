@@ -77,7 +77,7 @@ dependencies {
     localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
 
     // JEI config values are MezzConfig's IConfigValue, so its api has to be on the compile path.
-    implementation "curse.maven:mezzconfig-1689768:8932691"
+    implementation "curse.maven:mezzconfig-1689768:9318723"
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

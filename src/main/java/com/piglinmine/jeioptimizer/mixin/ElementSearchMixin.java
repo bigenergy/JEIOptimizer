@@ -3,7 +3,6 @@ package com.piglinmine.jeioptimizer.mixin;
 import com.piglinmine.jeioptimizer.Config;
 import com.piglinmine.jeioptimizer.Jeioptimizer;
 import com.piglinmine.jeioptimizer.WorkerPool;
-import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.search.ISearchStorageBuilder;
 import mezz.jei.common.config.SearchMode;
 import mezz.jei.common.search.PrefixInfo;
@@ -48,8 +47,14 @@ public abstract class ElementSearchMixin {
     private Map<PrefixInfo<IListElementInfo<?>, IListElement<?>>,
             PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
+    @Shadow @Final
+    private ElementPrefixParser elementPrefixParser;
+
     @Unique
     private boolean jeiopt$hijacked;
+
+    @Unique
+    private Collection<IListElementInfo<?>> jeiopt$infos;
 
     @Shadow
     private void rebuildSearchIndex(ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
@@ -81,16 +86,17 @@ public abstract class ElementSearchMixin {
             return;
         }
         this.jeiopt$hijacked = true;
+        this.jeiopt$infos = infos;
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void jeiopt$parallelBuild(
-            ElementPrefixParser parser,
-            Collection<IListElementInfo<?>> infos,
-            IIngredientManager ingredientManager,
-            CallbackInfo ci) {
+    private void jeiopt$parallelBuild(CallbackInfo ci) {
 
         if (!this.jeiopt$hijacked) return;
+
+        ElementPrefixParser parser = this.elementPrefixParser;
+        Collection<IListElementInfo<?>> infos = this.jeiopt$infos;
+        this.jeiopt$infos = null;
 
         Config.Mode mode = Config.MODE;
         long t0 = System.nanoTime();
@@ -152,7 +158,6 @@ public abstract class ElementSearchMixin {
             }
             this.prefixedSearchables.put(info, searchable);
         }
-        // The constructor's own updateCombinedSearchables() ran against an empty map.
         this.updateCombinedSearchables();
 
         if (Config.LOG_TIMING_ENABLED) {

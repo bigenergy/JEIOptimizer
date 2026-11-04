@@ -13,8 +13,25 @@ public final class MenuUpdateGuard {
 
     private static volatile Object active;
 
+    private static volatile Object pendingLeft;
+    private static volatile Object pendingRight;
+
     public static void begin(Object menu) {
         if (Config.SKIP_REDUNDANT_MENU_UPDATES) active = menu;
+    }
+
+    public static void begin(Object menu, Object left, Object right) {
+        pendingLeft = left;
+        pendingRight = right;
+        begin(menu);
+    }
+
+    public static Object pendingLeft() {
+        return pendingLeft;
+    }
+
+    public static Object pendingRight() {
+        return pendingRight;
     }
 
     public static void end() {

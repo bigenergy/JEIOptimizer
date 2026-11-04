@@ -22,18 +22,19 @@ public abstract class AnvilHelperMixin {
     @Inject(method = "setAnvilMenu", at = @At("HEAD"), require = 0)
     private static void jeiopt$suppressUpdates(
             AnvilMenu menu, ItemStack left, ItemStack right, CallbackInfoReturnable<AnvilMenu> cir) {
-        MenuUpdateGuard.begin(menu);
+        MenuUpdateGuard.begin(menu, left, right);
     }
 
     // Also fires on the return inside JEI's catch handler, so the guard is always released.
     @Inject(method = "setAnvilMenu", at = @At("RETURN"), cancellable = true, require = 0)
-    private static void jeiopt$resumeAndRecalculate(
-            AnvilMenu menu, ItemStack left, ItemStack right, CallbackInfoReturnable<AnvilMenu> cir) {
+    private static void jeiopt$resumeAndRecalculate(CallbackInfoReturnable<AnvilMenu> cir) {
         MenuUpdateGuard.end();
         AnvilMenu result = cir.getReturnValue();
         if (result == null) {
             return;
         }
+        ItemStack left = (ItemStack) MenuUpdateGuard.pendingLeft();
+        ItemStack right = (ItemStack) MenuUpdateGuard.pendingRight();
         // JEI sets the slots inside try/catch: a broken mod item that throws during the
         // recalculation is logged and the entry skipped. Our recalculation runs after that
         // block, so the same guard has to be repeated here or the throw kills the game.

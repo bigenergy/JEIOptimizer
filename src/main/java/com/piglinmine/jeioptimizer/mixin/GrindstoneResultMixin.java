@@ -22,9 +22,9 @@ public abstract class GrindstoneResultMixin {
         MenuUpdateGuard.begin(menu);
     }
 
+    // No arguments at RETURN: JEI 29.53+ may reuse their local slots before returning.
     @Inject(method = "getGrindstoneResult", at = @At("RETURN"), require = 0)
-    private void jeiopt$resume(
-            GrindstoneMenu menu, ItemStack top, ItemStack bottom, CallbackInfoReturnable<ItemStack> cir) {
+    private void jeiopt$resume(CallbackInfoReturnable<ItemStack> cir) {
         MenuUpdateGuard.end();
     }
 }

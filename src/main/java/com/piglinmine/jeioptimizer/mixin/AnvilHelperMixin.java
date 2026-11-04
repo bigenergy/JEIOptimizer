@@ -26,9 +26,10 @@ public abstract class AnvilHelperMixin {
     }
 
     // Also fires on the return inside JEI's catch handler, so the guard is always released.
+    // Takes no arguments: newer JEI builds reuse their local slots in that catch handler, and
+    // loading them as arguments then fails verification (seen in JEI 29.53 for 26.1.2).
     @Inject(method = "setAnvilMenu", at = @At("RETURN"), cancellable = true, require = 0)
-    private static void jeiopt$resumeAndRecalculate(
-            AnvilMenu menu, ItemStack left, ItemStack right, CallbackInfoReturnable<AnvilMenu> cir) {
+    private static void jeiopt$resumeAndRecalculate(CallbackInfoReturnable<AnvilMenu> cir) {
         MenuUpdateGuard.end();
         AnvilMenu result = cir.getReturnValue();
         if (result == null) {
@@ -41,7 +42,8 @@ public abstract class AnvilHelperMixin {
             result.createResult();
         } catch (RuntimeException | LinkageError e) {
             Jeioptimizer.LOGGER.error("Could not set anvil recipe for: ({} and {}).",
-                    ErrorUtil.getItemStackInfo(left), ErrorUtil.getItemStackInfo(right), e);
+                    ErrorUtil.getItemStackInfo(result.slots.get(0).getItem()),
+                    ErrorUtil.getItemStackInfo(result.slots.get(1).getItem()), e);
             cir.setReturnValue(null);
         }
     }

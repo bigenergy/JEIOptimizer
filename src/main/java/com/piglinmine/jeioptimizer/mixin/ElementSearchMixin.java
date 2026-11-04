@@ -3,16 +3,15 @@ package com.piglinmine.jeioptimizer.mixin;
 import com.piglinmine.jeioptimizer.Config;
 import com.piglinmine.jeioptimizer.Jeioptimizer;
 import com.piglinmine.jeioptimizer.WorkerPool;
-import mezz.jei.api.runtime.IIngredientManager;
 import mezz.jei.api.search.ISearchStorageBuilder;
 import mezz.jei.common.config.SearchMode;
-import mezz.jei.common.search.CombinedSearchables;
 import mezz.jei.common.search.PrefixInfo;
 import mezz.jei.common.search.PrefixedSearchable;
 import mezz.jei.gui.ingredients.IListElement;
 import mezz.jei.gui.ingredients.IListElementInfo;
 import mezz.jei.gui.search.ElementPrefixParser;
 import mezz.jei.gui.search.ElementSearch;
+import mezz.jei.gui.search.ElementSearchIndex;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -49,10 +48,24 @@ public abstract class ElementSearchMixin {
             PrefixedSearchable<IListElementInfo<?>, IListElement<?>>> prefixedSearchables;
 
     @Shadow @Final
-    private CombinedSearchables<IListElement<?>> combinedSearchables;
+    private ElementPrefixParser elementPrefixParser;
 
     @Unique
     private boolean jeiopt$hijacked;
+
+    /** The constructor's infos, taken from the redirected call: see {@link #jeiopt$parallelBuild}. */
+    @Unique
+    private Collection<IListElementInfo<?>> jeiopt$infos;
+
+    @Shadow
+    private void rebuildSearchIndex(ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
+        throw new AssertionError();
+    }
+
+    @Shadow
+    private void updateCombinedSearchables() {
+        throw new AssertionError();
+    }
 
     /**
      * Feed the vanilla per-prefix loop an empty collection so it does nothing;
@@ -63,27 +76,32 @@ public abstract class ElementSearchMixin {
             method = "<init>",
             at = @At(
                     value = "INVOKE",
-                    target = "Lmezz/jei/gui/search/ElementPrefixParser;allPrefixInfos()Ljava/util/Collection;"
+                    target = "Lmezz/jei/gui/search/ElementSearch;rebuildSearchIndex(Lmezz/jei/gui/search/ElementSearchIndex;Ljava/util/Collection;)V"
             )
     )
-    private Collection<PrefixInfo<IListElementInfo<?>, IListElement<?>>> jeiopt$skipVanillaLoop(
-            ElementPrefixParser parser) {
+    private void jeiopt$skipVanillaLoop(
+            ElementSearch self, ElementSearchIndex index, Collection<IListElementInfo<?>> infos) {
         Config.Mode mode = Config.MODE;
         if (mode == Config.Mode.OFF || mode == Config.Mode.BATCH) {
-            return parser.allPrefixInfos();
+            this.rebuildSearchIndex(index, infos);
+            return;
         }
         this.jeiopt$hijacked = true;
-        return List.of();
+        this.jeiopt$infos = infos;
     }
 
+    /**
+     * Takes no constructor arguments: newer JEI builds reuse their local slots before returning,
+     * and loading them as arguments then fails verification (seen in JEI 29.53 for 26.1.2).
+     */
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void jeiopt$parallelBuild(
-            ElementPrefixParser parser,
-            Collection<IListElementInfo<?>> infos,
-            IIngredientManager ingredientManager,
-            CallbackInfo ci) {
+    private void jeiopt$parallelBuild(CallbackInfo ci) {
 
         if (!this.jeiopt$hijacked) return;
+
+        ElementPrefixParser parser = this.elementPrefixParser;
+        Collection<IListElementInfo<?>> infos = this.jeiopt$infos;
+        this.jeiopt$infos = null;
 
         Config.Mode mode = Config.MODE;
         long t0 = System.nanoTime();
@@ -144,8 +162,9 @@ public abstract class ElementSearchMixin {
                 searchable = jeiopt$buildPrefix(info, infoArray, false);
             }
             this.prefixedSearchables.put(info, searchable);
-            this.combinedSearchables.addSearchable(searchable);
         }
+        // JEI 30.48+ rebuilds combinedSearchables from prefixedSearchables in one go.
+        this.updateCombinedSearchables();
 
         if (Config.LOG_TIMING_ENABLED) {
             Jeioptimizer.LOGGER.info(
